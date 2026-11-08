@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>記帳</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="記帳">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="ledger.css">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body data-tab="records">
+  <div class="topbar">
+    <button id="eye" class="eye" type="button" aria-pressed="false" aria-label="隱藏金額">
+      <svg class="eye-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+      <svg class="eye-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3 3.9M6.6 6.6A17 17 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 4-.9M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+    </button>
+  </div>
+  <div id="banner" hidden role="status">
+    <span id="banner-text"></span>
+    <button id="banner-btn" type="button">立即備份</button>
+  </div>
+
+  <div id="app"></div>
+
+  <main id="analysis" aria-label="分析"></main>
+
+  <main id="settings" aria-label="設定">
+    <h1 class="title">設定</h1>
+    <h2 class="gt">資料</h2>
+    <dl class="group">
+      <div><dt>記錄筆數</dt><dd id="stat-count">–</dd></div>
+      <div><dt>最後備份</dt><dd id="stat-backup">–</dd></div>
+      <div><dt>資料版本</dt><dd>v3</dd></div>
+    </dl>
+    <h2 class="gt">隱私</h2>
+    <div class="group">
+      <label class="row-switch"><span>啟動時隱藏金額</span><input id="pv-start" type="checkbox" role="switch"></label>
+      <label class="row-switch"><span>離開 App 時隱藏金額</span><input id="pv-leave" type="checkbox" role="switch"></label>
+    </div>
+    <p class="note">隱藏只是不讓旁人從畫面看到金額，不是密碼鎖。點右上角的眼睛可以隨時切換。</p>
+    <h2 class="gt">分類</h2>
+    <div class="group">
+      <button class="row-btn" id="btn-cats" type="button">管理收支分類</button>
+    </div>
+    <p class="note">可以新增、改名或移除分類。記帳時，分類選單最下面的「＋ 新增分類」也能直接新增。</p>
+    <h2 class="gt">備份與還原</h2>
+    <div class="group">
+      <button class="row-btn" id="btn-json" type="button">匯出 JSON 備份</button>
+      <button class="row-btn" id="btn-csv" type="button">匯出 CSV（可用 Excel 開啟）</button>
+      <label class="row-btn">從 JSON 備份還原<input id="file" type="file" accept="application/json,.json" hidden></label>
+    </div>
+    <p class="note">資料只存在這支手機的這個 App 裡。換手機之前，請先匯出 JSON 備份，到新手機再還原。</p>
+  </main>
+
+  <nav class="tabbar" aria-label="主選單">
+    <button type="button" data-tab="records" aria-current="true">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM9 9h6M9 13h6"/></svg><span>記帳</span>
+    </button>
+    <button type="button" data-tab="stats" aria-current="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V10M12 20V4M19 20v-7"/></svg><span>統計</span>
+    </button>
+    <button type="button" data-tab="analysis" aria-current="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-5 4 3 7-8M4 20h16"/></svg><span>分析</span>
+    </button>
+    <button type="button" data-tab="accounts" aria-current="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h3"/></svg><span>帳戶</span>
+    </button>
+    <button type="button" data-tab="settings" aria-current="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg><span>設定</span>
+    </button>
+  </nav>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
