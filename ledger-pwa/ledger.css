@@ -1,0 +1,98 @@
+/* ledger.css — 文字顏色與字型沿用你網站的設定；要換色只需覆寫 .ledger 上的 --l-* 變數 */
+.ledger {
+  --l-accent: #3b4cc0; --l-on-accent: #fff;
+  --l-income: #1f7a5c; --l-warn: #a85f00; --l-over: #c0332b;
+  --l-muted: color-mix(in srgb, currentColor 62%, transparent);
+  --l-line: color-mix(in srgb, currentColor 16%, transparent);
+  --l-tint: color-mix(in srgb, currentColor 7%, transparent);
+  max-width: 64rem; margin-inline: auto; padding: 1rem;
+  font: inherit; color: inherit; font-variant-numeric: tabular-nums;
+}
+@media (prefers-color-scheme: dark) {
+  .ledger { --l-accent: #9aa6ff; --l-on-accent: #10132e; --l-income: #5cc8a0; --l-warn: #e8a84a; --l-over: #ff7b72; }
+}
+.ledger, .ledger *, .ledger *::before, .ledger *::after { box-sizing: border-box; }
+.ledger ul { list-style: none; margin: 0; padding: 0; }
+.ledger :is(input, select, button):focus-visible { outline: 2px solid var(--l-accent); outline-offset: 2px; }
+.ledger__sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.ledger__muted, .ledger__empty { color: var(--l-muted); }
+.ledger__empty { margin: .5rem 0; }
+
+/* 月份 */
+.ledger__head { display: flex; align-items: center; justify-content: center; gap: .75rem; }
+.ledger__head h2 { margin: 0; min-width: 8rem; text-align: center; font-size: 1.1rem; font-weight: 600; }
+.ledger__nav { width: 2.25rem; height: 2.25rem; border: 1px solid var(--l-line); border-radius: 50%; background: transparent; color: inherit; font-size: 1.25rem; line-height: 1; cursor: pointer; }
+
+/* 摘要：結餘是全頁最大的字 */
+.ledger__sum { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem 1.5rem; margin: 1rem 0; padding: 1rem 0; border-block: 1px solid var(--l-line); }
+.ledger__sum > div { margin: 0; }
+.ledger__sum dt { color: var(--l-muted); font-size: .85rem; }
+.ledger__sum dd { margin: 0; font-size: 1.15rem; font-weight: 600; }
+.ledger__bal { grid-column: 1 / -1; }
+.ledger__bal dd { font-size: clamp(2rem, 6vw, 2.75rem); font-weight: 650; letter-spacing: -.02em; line-height: 1.15; }
+.ledger__bal dd.is-neg { color: var(--l-over); }
+@media (min-width: 640px) { .ledger__sum { grid-template-columns: 2fr 1fr 1fr; align-items: end; } .ledger__bal { grid-column: auto; } }
+
+/* 預算提醒 */
+.ledger__alert { margin: .4rem 0; padding: .55rem .8rem; border-left: 3px solid; background: var(--l-tint); font-size: .9rem; }
+.ledger__alert.is-over { border-color: var(--l-over); } .ledger__alert.is-over b { color: var(--l-over); }
+.ledger__alert.is-warn { border-color: var(--l-warn); } .ledger__alert.is-warn b { color: var(--l-warn); }
+
+/* 版面 */
+.ledger__grid { display: grid; gap: 2rem; margin-top: 1.25rem; }
+.ledger__col { display: grid; gap: 1.75rem; align-content: start; min-width: 0; }
+@media (min-width: 840px) { .ledger__grid { grid-template-columns: 1.1fr 1fr; } }
+.ledger__sec-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: .5rem; }
+.ledger__sec-head h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+
+/* 表單 */
+.ledger__form { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+.ledger__type { grid-column: 1 / -1; display: flex; margin: 0; padding: 0; border: 1px solid var(--l-line); border-radius: .5rem; overflow: hidden; }
+.ledger__type label { position: relative; flex: 1; }
+.ledger__type input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.ledger__type span { display: block; padding: .5rem; text-align: center; }
+.ledger__type input:checked + span { background: var(--l-accent); color: var(--l-on-accent); font-weight: 600; }
+.ledger__type input:focus-visible + span { outline: 2px solid currentColor; outline-offset: -4px; }
+.ledger__field { display: grid; gap: .25rem; min-width: 0; color: var(--l-muted); font-size: .85rem; }
+.ledger :is(input[type=number], input[type=text], input[type=date], select) {
+  width: 100%; min-width: 0; padding: .55rem .65rem; font: inherit; color: inherit;
+  background: transparent; border: 1px solid var(--l-line); border-radius: .5rem;
+}
+.ledger select option { color: CanvasText; background: Canvas; }
+.ledger__error { grid-column: 1 / -1; margin: 0; color: var(--l-over); font-size: .9rem; }
+.ledger__error:empty { display: none; }
+.ledger__btn { padding: .6rem 1rem; font: inherit; color: inherit; background: transparent; border: 1px solid var(--l-line); border-radius: .5rem; cursor: pointer; }
+.ledger__btn--primary { color: var(--l-on-accent); background: var(--l-accent); border-color: var(--l-accent); font-weight: 600; }
+.ledger__form .ledger__btn { grid-column: 1 / -1; }
+.ledger__link { padding: .25rem 0; font: inherit; font-size: .875rem; color: var(--l-accent); background: none; border: 0; text-decoration: underline; text-underline-offset: .2em; cursor: pointer; }
+
+/* 記錄 */
+.ledger__tx { display: grid; grid-template-columns: 3rem 1fr auto 2rem; gap: .5rem; align-items: center; padding: .6rem 0; border-bottom: 1px solid var(--l-line); }
+.ledger__tx time { color: var(--l-muted); font-size: .85rem; }
+.ledger__tx-main { display: grid; min-width: 0; padding: 0; font: inherit; color: inherit; text-align: left; background: none; border: 0; cursor: pointer; }
+.ledger__tx small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ledger__num { font-weight: 600; white-space: nowrap; }
+.ledger__num small { font-weight: 400; color: var(--l-muted); }
+.ledger__num.is-income { color: var(--l-income); }
+.ledger__x { width: 2rem; height: 2rem; border: 0; border-radius: .4rem; background: transparent; color: var(--l-muted); font-size: 1.25rem; line-height: 1; cursor: pointer; }
+.ledger__x:hover { color: var(--l-over); background: var(--l-tint); }
+
+/* 分類與預算進度 */
+.ledger__cat { padding: .65rem 0; border-bottom: 1px solid var(--l-line); }
+.ledger__cat-top { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .35rem; }
+.ledger__meter { height: .4rem; margin-bottom: .3rem; overflow: hidden; border-radius: 99px; background: var(--l-line); }
+.ledger__meter i { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--l-accent); transition: width .25s; }
+.ledger__cat.is-warn .ledger__meter i { background: var(--l-warn); }
+.ledger__cat.is-over .ledger__meter i { background: var(--l-over); }
+@media (prefers-reduced-motion: reduce) { .ledger__meter i { transition: none; } }
+.ledger__budget-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .35rem 0; }
+.ledger__budget-row input { width: 8rem; text-align: right; }
+.ledger__hint { margin: 0 0 .5rem; color: var(--l-muted); font-size: .85rem; }
+.ledger__actions { display: flex; gap: .5rem; margin-top: .75rem; }
+
+/* 每日圖表 */
+.ledger__daily { display: block; width: 100%; height: auto; }
+.ledger__bar { fill: color-mix(in srgb, var(--l-accent) 45%, transparent); }
+.ledger__bar.is-peak { fill: var(--l-accent); }
+.ledger__daily line { stroke: var(--l-line); }
+.ledger__daily text { fill: var(--l-muted); font-size: 10px; }
