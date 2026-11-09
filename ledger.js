@@ -540,12 +540,20 @@ export function createLedger(root, options = {}) {
   function renderList() {
     const q = $('search').value.trim().toLowerCase();
     const tx = (q ? state.transactions.filter(t => [t.category, t.note, t.loanId ? loanName(t.loanId) : '', accName(t.accountId), t.toAccountId ? accName(t.toAccountId) : '', t.personId ? personName(t.personId) : '', String(t.amount), t.time, t.date].join(' ').toLowerCase().includes(q)) : inMonth()).sort((a, b) => b.date.localeCompare(a.date) || (b.time || '').localeCompare(a.time || '') || (b.createdAt || 0) - (a.createdAt || 0));
+    const dayExp = {}; let lastDay = '';
+    tx.forEach(t => { if (t.type === 'expense') dayExp[t.date] = round2((dayExp[t.date] || 0) + t.amount); });
     $('list').innerHTML = `<div class="ledger__sec-head"><h3>${q ? '搜尋結果（全部月份）' : '本月記錄'}</h3><small class="ledger__muted">${tx.length} 筆</small></div>` +
       (tx.length
         ? `<ul>${tx.map(t => {
+          let head = '';
+          if (t.date !== lastDay) {
+            lastDay = t.date;
+            const d = new Date(t.date + 'T00:00:00'), spent = dayExp[t.date] || 0;
+            head = `<li class="ledger__day"><span>${(q ? t.date.slice(2) : t.date.slice(5)).replaceAll('-', '/')} 週${'日一二三四五六'[d.getDay()]}</span>${spent ? `<span>支出 <b>${money(spent)}</b></span>` : ''}</li>`;
+          }
           const sub = t.type === 'transfer' ? `${accName(t.accountId)} → ${accName(t.toAccountId)}` : DEBT[t.type] ? `${personName(t.personId)} · ${accName(t.accountId)}` : t.type === 'loanprin' ? `${loanName(t.loanId)} · ${accName(t.accountId)}` : accName(t.accountId);
           const sign = t.type === 'income' ? '+' : t.type === 'expense' ? '−' : '';
-          return `<li class="ledger__tx"><time datetime="${t.date}${t.time ? 'T' + t.time : ''}">${(q ? t.date.slice(2) : t.date.slice(5)).replaceAll('-', '/')}${t.time ? `<small>${t.time}</small>` : ''}</time>` +
+          return head + `<li class="ledger__tx"><time datetime="${t.date}${t.time ? 'T' + t.time : ''}">${t.time || '–'}</time>` +
             `<button type="button" class="ledger__tx-main" data-act="edit" data-id="${esc(t.id)}" aria-label="編輯 ${esc(t.category)} ${money(t.amount)}"><span>${esc(t.category)}</span><small class="ledger__muted">${esc(sub)}${t.note ? ' · ' + esc(t.note) : ''}</small></button>` +
             `<span class="ledger__num is-${DEBT[t.type] || t.type === 'loanprin' ? 'transfer' : t.type}">${sign}${money(t.amount)}</span>` +
             `<button class="ledger__x" type="button" data-act="remove" data-id="${esc(t.id)}" aria-label="刪除 ${esc(t.category)} ${money(t.amount)}">×</button></li>`;

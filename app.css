@@ -219,3 +219,7 @@ body[data-tab="analysis"] #analysis { display: block; }
 .ledger__person .ledger__meter { margin: 12px 0 6px; }
 .ledger__person .ledger__cc-grid { margin-top: 16px; }
 .ledger__instlist .ledger__pay { min-height: 32px; padding: 0 12px; font-size: 14px; }
+
+/* 記錄列表：每天的標題與當日支出 */
+.ledger__day { display: flex; justify-content: space-between; align-items: baseline; margin-top: 8px; padding: 12px 0 6px; color: var(--sub); font-size: 14px; list-style: none; border-bottom: 1px solid var(--sep); }
+.ledger__day b { color: var(--text); font-weight: 500; }
