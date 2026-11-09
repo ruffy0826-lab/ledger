@@ -1,11 +1,14 @@
 import { createLedger } from './ledger.js';
 import { mountAnalysis } from './analysis.js';
 
-const SCHEMA = 3;          // 備份檔／資料格式版本。改動資料結構時 +1，並在 migrations 補上升級函式
+const SCHEMA = 5;          // 備份檔／資料格式版本。改動資料結構時 +1，並在 migrations 補上升級函式
 const REMIND_DAYS = 7;     // 超過幾天沒備份就提醒
 // v1 → v2：新增帳戶、時間、轉帳。舊備份沒有帳戶，還原時會自動歸到「現金」帳戶
 // v2 → v3：新增可自訂的分類清單。沒有 categories 的舊備份，還原時會用預設分類＋記錄裡出現過的分類
-const migrations = { 1: d => ({ ...d, schemaVersion: 2 }), 2: d => ({ ...d, schemaVersion: 3 }) };
+// v3 → v4：新增往來對象（代墊／借出／借入）。舊備份沒有 people，還原後就是空的
+const migrations = { 1: d => ({ ...d, schemaVersion: 2 }), 2: d => ({ ...d, schemaVersion: 3 }), 3: d => ({ ...d, schemaVersion: 4 }), 4: d => ({ ...d, schemaVersion: 5 }) };
+// v4 → v5：新增貸款與分期付款（loans／installs）。舊備份沒有這兩項，還原後就是空的
+const TYPES = ['expense', 'income', 'transfer', 'lend', 'advance', 'collect', 'borrow', 'payback', 'loanprin'];
 const $ = s => document.querySelector(s);
 
 // ---------- IndexedDB ----------
@@ -31,13 +34,13 @@ const legacy = () => { try { const s = JSON.parse(localStorage.getItem('ledger:v
 const storage = {
   async load() {
     const t = (await dbp).transaction(['transactions', 'meta']);
-    const [transactions, budgets, accounts, categories] = await Promise.all([req(t.objectStore('transactions').getAll()), req(t.objectStore('meta').get('budgets')), req(t.objectStore('meta').get('accounts')), req(t.objectStore('meta').get('categories'))]);
+    const [transactions, budgets, accounts, categories, people, loans, installs] = await Promise.all([req(t.objectStore('transactions').getAll()), req(t.objectStore('meta').get('budgets')), req(t.objectStore('meta').get('accounts')), req(t.objectStore('meta').get('categories')), req(t.objectStore('meta').get('people')), req(t.objectStore('meta').get('loans')), req(t.objectStore('meta').get('installs'))]);
     if (!transactions.length && !budgets) {          // 第一次開啟：把舊版 localStorage 的資料搬進來
       const old = legacy();
       if (old) { await storage.save(old); return old; }
     }
     known = new Map(transactions.map(r => [r.id, JSON.stringify(r)]));
-    return { transactions, budgets: budgets || {}, accounts: accounts || [], categories };
+    return { transactions, budgets: budgets || {}, accounts: accounts || [], categories, people: people || [], loans: loans || [], installs: installs || [] };
   },
   async save(state) {
     const t = (await dbp).transaction(['transactions', 'meta'], 'readwrite'), s = t.objectStore('transactions');
@@ -53,6 +56,9 @@ const storage = {
       t.objectStore('meta').put(state.budgets, 'budgets');
       t.objectStore('meta').put(state.accounts, 'accounts');
       t.objectStore('meta').put(state.categories, 'categories');
+      t.objectStore('meta').put(state.people || [], 'people');
+      t.objectStore('meta').put(state.loans || [], 'loans');
+      t.objectStore('meta').put(state.installs || [], 'installs');
       await done(t);
     } catch (e) { known = null; throw e; }
   },
@@ -68,7 +74,7 @@ const ledger = createLedger($('#app'), { storage, masked: hidden, onReady: refre
 navigator.storage?.persist?.();   // 請瀏覽器把資料標為「不要自動清除」
 
 const nf = new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', minimumFractionDigits: 0, maximumFractionDigits: 2 });
-const drawAnalysis = mountAnalysis($('#analysis'), () => ledger.getState(), n => (hidden ? '•••••' : nf.format(n)), () => hidden);
+const drawAnalysis = mountAnalysis($('#analysis'), () => ledger.getState(), n => (hidden ? '•••••' : nf.format(n)), () => hidden, () => ledger.getDebt());
 const setTab = t => {
   document.body.dataset.tab = t;
   document.querySelectorAll('.tabbar button').forEach(x => x.setAttribute('aria-current', String(x.dataset.tab === t)));
@@ -103,7 +109,7 @@ async function saveFile(name, text, mime) {
 }
 async function exportJSON() {
   const s = ledger.getState();
-  const data = { app: 'ledger', schemaVersion: SCHEMA, exportedAt: new Date().toISOString(), transactions: s.transactions, budgets: s.budgets, accounts: s.accounts, categories: s.categories };
+  const data = { app: 'ledger', schemaVersion: SCHEMA, exportedAt: new Date().toISOString(), transactions: s.transactions, budgets: s.budgets, accounts: s.accounts, categories: s.categories, people: s.people, loans: s.loans, installs: s.installs };
   if (await saveFile(`ledger-backup-${stamp()}.json`, JSON.stringify(data, null, 2), 'application/json')) {
     await meta.set('lastBackup', data.exportedAt); refresh();
   }
@@ -115,8 +121,8 @@ const cell = v => {
 };
 function exportCSV() {
   const rows = ledger.getState().transactions.slice().sort((a, b) => a.date.localeCompare(b.date));
-  const names = Object.fromEntries(ledger.getState().accounts.map(a => [a.id, a.name])), kind = { income: '收入', expense: '支出', transfer: '轉帳' };
-  const csv = ['日期,時間,類型,帳戶,轉入帳戶,分類,金額,備註', ...rows.map(t => [t.date, t.time || '', kind[t.type], names[t.accountId] || '', names[t.toAccountId] || '', t.category, t.amount, t.note].map(cell).join(','))].join('\r\n');
+  const names = Object.fromEntries(ledger.getState().accounts.map(a => [a.id, a.name])), kind = { income: '收入', expense: '支出', transfer: '轉帳', lend: '借出', advance: '代墊', collect: '收回', borrow: '借入', payback: '還款', loanprin: '還本金' }, who = Object.fromEntries(ledger.getState().people.map(p => [p.id, p.name])), lname = Object.fromEntries(ledger.getState().loans.map(l => [l.id, l.name])), iname = Object.fromEntries(ledger.getState().installs.map(p => [p.id, p.name]));
+  const csv = ['日期,時間,類型,帳戶,轉入帳戶,對象／項目,分類,金額,備註', ...rows.map(t => [t.date, t.time || '', kind[t.type], names[t.accountId] || '', names[t.toAccountId] || '', who[t.personId] || lname[t.loanId] || iname[t.installId] || '', t.category, t.amount, t.note].map(cell).join(','))].join('\r\n');
   saveFile(`ledger-${stamp()}.csv`, '\uFEFF' + csv, 'text/csv');   // BOM 讓 Excel 正確顯示中文
 }
 
@@ -133,14 +139,14 @@ async function restore(file) {
   try { d = migrate(JSON.parse(await file.text())); } catch (e) { return alert(e instanceof SyntaxError ? '這不是有效的備份檔。' : e.message); }
   const valid = new Map();
   for (const t of d.transactions) {
-    if (t && typeof t.id === 'string' && ['expense', 'income', 'transfer'].includes(t.type) && Number(t.amount) > 0 && /^\d{4}-\d{2}-\d{2}$/.test(t.date) && typeof t.category === 'string')
-      valid.set(t.id, { id: t.id, type: t.type, amount: Number(t.amount), accountId: t.accountId, toAccountId: t.toAccountId, category: t.category, date: t.date, time: /^\d{2}:\d{2}$/.test(t.time) ? t.time : '', note: String(t.note || ''), createdAt: t.createdAt || 0 });
+    if (t && typeof t.id === 'string' && TYPES.includes(t.type) && Number(t.amount) > 0 && /^\d{4}-\d{2}-\d{2}$/.test(t.date) && typeof t.category === 'string')
+      valid.set(t.id, { id: t.id, type: t.type, amount: Number(t.amount), accountId: t.accountId, toAccountId: t.toAccountId, ...(t.personId ? { personId: String(t.personId) } : {}), ...(t.loanId ? { loanId: String(t.loanId), payId: String(t.payId || ''), regular: !!t.regular, extra: !!t.extra } : {}), ...(t.installId ? { installId: String(t.installId), idx: Number(t.idx) } : {}), category: t.category, date: t.date, time: /^\d{2}:\d{2}$/.test(t.time) ? t.time : '', note: String(t.note || ''), createdAt: t.createdAt || 0 });
   }
   const skipped = d.transactions.length - valid.size, cur = ledger.getState();
   const ok = confirm(`要用備份取代目前的資料嗎？\n\n目前：${cur.transactions.length} 筆記錄\n備份：${valid.size} 筆記錄${d.exportedAt ? `（匯出於 ${fmt(d.exportedAt)}）` : ''}${skipped ? `\n略過 ${skipped} 筆格式不正確的記錄` : ''}\n\n還原後，目前的資料會被覆蓋且無法復原。建議先匯出目前的資料。`);
   if (!ok) return;
   const budgets = Object.fromEntries(Object.entries(d.budgets || {}).filter(([, v]) => Number(v) > 0).map(([k, v]) => [k, Number(v)]));
-  ledger.replaceState({ transactions: [...valid.values()], budgets, accounts: Array.isArray(d.accounts) ? d.accounts : [], categories: d.categories && typeof d.categories === 'object' ? d.categories : undefined });
+  ledger.replaceState({ transactions: [...valid.values()], budgets, accounts: Array.isArray(d.accounts) ? d.accounts : [], people: Array.isArray(d.people) ? d.people : [], loans: Array.isArray(d.loans) ? d.loans : [], installs: Array.isArray(d.installs) ? d.installs : [], categories: d.categories && typeof d.categories === 'object' ? d.categories : undefined });
   alert(`已還原 ${valid.size} 筆記錄。`);
 }
 

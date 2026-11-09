@@ -194,3 +194,28 @@ body[data-tab="analysis"] #analysis { display: block; }
 .ledger__catadd { display: flex; gap: 8px; margin: 8px 0 20px; }
 .ledger__catadd input { flex: 1; }
 .ledger__catadd .ledger__btn { flex: none; }
+
+/* ---- 往來（代墊／借出／應收應付） ---- */
+.ledger__seg { display: flex; gap: 4px; margin: 0 0 12px; padding: 4px; border-radius: 12px; background: var(--card); }
+.ledger__seg button { flex: 1; min-height: 40px; border: 0; border-radius: 9px; background: none; color: var(--sub); font: inherit; font-size: 15px; cursor: pointer; }
+.ledger__seg button[aria-pressed="true"] { background: var(--fill); color: var(--text); font-weight: 500; }
+.ledger__sum--two { grid-template-columns: 1fr 1fr; }
+.ledger__sum--two .is-pos { color: var(--green); }
+.ledger__person { margin-bottom: 16px; padding: 20px; border-radius: 16px; background: var(--card); }
+.ledger__person h3 { margin: 0 0 4px; font-size: 22px; font-weight: 500; }
+.ledger__status { margin: 0 0 12px; color: var(--sub); }
+.ledger__status b { color: var(--text); font-size: 20px; font-weight: 500; }
+.ledger__person .ledger__actions { flex-wrap: wrap; margin: 0 0 16px; }
+.ledger__person .ledger__actions .ledger__btn { flex: 1 1 30%; padding: 0 12px; }
+.ledger__link--danger { color: var(--red); }
+[data-r="accounts"] > ul:not(.ledger__acclist) { background: var(--card); border-radius: 16px; padding: 0 20px; margin: 0; list-style: none; }
+
+/* ---- 貸款／分期 ---- */
+[data-r="pending"]:not(:empty) { margin: 12px 0; padding: 16px 20px; border-radius: 16px; background: var(--card); border-left: 2px solid var(--blue); }
+[data-r="pending"] ul { margin: 0; padding: 0; list-style: none; }
+.ledger__pend { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--sep); }
+.ledger__pend:last-child { border-bottom: 0; }
+.ledger__pend small { display: block; }
+.ledger__person .ledger__meter { margin: 12px 0 6px; }
+.ledger__person .ledger__cc-grid { margin-top: 16px; }
+.ledger__instlist .ledger__pay { min-height: 32px; padding: 0 12px; font-size: 14px; }

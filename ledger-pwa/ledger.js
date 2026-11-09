@@ -13,7 +13,17 @@ const localAdapter = key => ({
 });
 
 const KINDS = { cash: '現金', bank: '銀行', ewallet: '電子支付', credit: '信用卡' };
-const TYPES = ['expense', 'income', 'transfer'];
+// 往來：借出／代墊／收回／借入／還款。這些只是「錢在帳戶與對象之間移動」，不算收入或支出
+const DEBT = { lend: '借出', advance: '代墊', collect: '收回', borrow: '借入', payback: '還款' };
+const DEBT_OPT = { lend: '借錢給人', advance: '幫人代墊', collect: '對方還我', borrow: '向人借錢', payback: '我還款' };
+const DEBT_HINT = { lend: '借出：錢從帳戶出去，對方欠你。不算支出。', advance: '代墊：幫對方先付，對方欠你。不算你的支出。', collect: '收回：對方還你錢。不算收入。', borrow: '借入：向人借錢，錢進帳戶，你欠對方。不算收入。', payback: '還款：你還對方錢。不算支出。' };
+// 貸款（車貸／房貸／信貸）與分期付款
+const LOAN_KINDS = { car: '車貸', house: '房貸', credit: '信貸', other: '其他貸款' };
+const LOAN_METHODS = { equal: '本息平均（每期繳一樣）', principal: '本金平均（每期本金一樣）' };
+const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s || '');
+const int = (v, lo, hi, d = lo) => { v = Math.round(Number(v)); return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d; };
+const INFLOW = new Set(['income', 'collect', 'borrow']);   // 讓帳戶餘額增加的類型
+const TYPES = ['expense', 'income', 'transfer', ...Object.keys(DEBT)];
 
 // 分類清單：去空白、去重複、限制長度；「轉帳」是系統保留名稱；每種至少留一個
 const cleanCats = (c, d) => {
@@ -31,7 +41,11 @@ const normalize = (s, defaults) => {
   if (!accounts.length) accounts = [{ id: 'acc-default', name: '現金', kind: 'cash', opening: 0 }];
   const ids = new Set(accounts.map(a => a.id));
   const transactions = (Array.isArray(s?.transactions) ? s.transactions : []).map(t => ({ ...t, accountId: ids.has(t.accountId) ? t.accountId : accounts[0].id, time: t.time || '' }));
-  return { transactions, budgets: s?.budgets || {}, accounts, categories: cleanCats(s?.categories, defaults) };
+  const people = (Array.isArray(s?.people) ? s.people : []).filter(p => p && p.id && p.name).map(p => ({ id: String(p.id), name: String(p.name).trim().slice(0, 20), dueDate: /^\d{4}-\d{2}-\d{2}$/.test(p.dueDate || '') ? p.dueDate : '' }));
+  const acc = id => (ids.has(id) ? id : accounts[0].id);
+  const loans = (Array.isArray(s?.loans) ? s.loans : []).filter(l => l && l.id && l.name && Number(l.balance0) > 0).map(l => ({ id: String(l.id), name: String(l.name).trim().slice(0, 20), kind: LOAN_KINDS[l.kind] ? l.kind : 'other', balance0: round2(Number(l.balance0)), rate: Math.min(100, Math.max(0, Number(l.rate) || 0)), months: int(l.months, 1, 600, 1), grace: int(l.grace, 0, 600, 0), method: l.method === 'principal' ? 'principal' : 'equal', payDay: int(l.payDay, 1, 31, 1), startDate: isDate(l.startDate) ? l.startDate : today(), accountId: acc(l.accountId) }));
+  const installs = (Array.isArray(s?.installs) ? s.installs : []).filter(p => p && p.id && p.name && Number(p.amount) > 0 && Number(p.periods) >= 1 && isDate(p.firstDate)).map(p => ({ id: String(p.id), name: String(p.name).trim().slice(0, 20), amount: round2(Number(p.amount)), periods: int(p.periods, 1, 360, 1), firstDate: p.firstDate, accountId: acc(p.accountId), category: String(p.category || '購物').slice(0, 12), paid0: int(p.paid0, 0, int(p.periods, 1, 360, 1), 0), since: isDate(p.since) ? p.since : p.firstDate }));
+  return { transactions, budgets: s?.budgets || {}, accounts, people, loans, installs, categories: cleanCats(s?.categories, defaults) };
 };
 
 // 下一個「每月 N 日」（遇到小月自動退到月底）
@@ -62,6 +76,7 @@ const SKELETON = `
   </header>
   <dl class="ledger__sum" data-r="summary"></dl>
   <div class="ledger__alerts" data-r="alerts" role="status"></div>
+  <section class="ledger__pending" data-r="pending"></section>
   <div class="ledger__grid">
     <div class="ledger__col">
       <form class="ledger__form" data-r="form" data-form="entry" novalidate>
@@ -70,10 +85,14 @@ const SKELETON = `
           <label><input type="radio" name="type" value="expense" checked><span>支出</span></label>
           <label><input type="radio" name="type" value="income"><span>收入</span></label>
           <label><input type="radio" name="type" value="transfer"><span>轉帳</span></label>
+          <label><input type="radio" name="type" value="debt"><span>往來</span></label>
         </fieldset>
         <label class="ledger__field"><span>金額</span><input name="amount" type="number" inputmode="decimal" min="0" step="any" placeholder="0"></label>
         <label class="ledger__field"><span data-r="accLabel">帳戶</span><select name="account"></select></label>
         <label class="ledger__field" data-r="toWrap" hidden><span>轉入帳戶</span><select name="toAccount"></select></label>
+        <label class="ledger__field" data-r="debtWrap" hidden><span>往來類型</span><select name="debtKind">${Object.entries(DEBT_OPT).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
+        <label class="ledger__field" data-r="personWrap" hidden><span>對象</span><select name="person"></select></label>
+        <p class="ledger__hint ledger__field--wide" data-r="debtHint" hidden></p>
         <label class="ledger__field" data-r="catWrap"><span>分類</span><select name="category"></select></label>
         <label class="ledger__field"><span>日期</span><input name="date" type="date"></label>
         <label class="ledger__field"><span>時間</span><input name="time" type="time"></label>
@@ -120,7 +139,7 @@ export function createLedger(root, options = {}) {
 
   let state = normalize(null, opt.categories);
   let month = today().slice(0, 7);
-  let type = 'expense', editing = false, ready = false, editId = null, accEdit = null, catMgr = false, lastCat = '';
+  let type = 'expense', editing = false, ready = false, editId = null, accEdit = null, catMgr = false, lastCat = '', lastPerson = '', view = 'acc', personOpen = null, loanOpen = null, loanForm = null, payMode = null, instOpen = null, instForm = null;
 
   root.innerHTML = SKELETON;
   const $ = k => root.querySelector(`[data-r="${k}"]`);
@@ -133,10 +152,42 @@ export function createLedger(root, options = {}) {
   // 帳戶餘額＝初始餘額＋收入－支出－轉出＋轉入（信用卡餘額為負數＝欠款）
   const balanceOf = (a, upto) => round2(state.transactions.reduce((b, t) => {
     if (upto && t.date > upto) return b;
-    if (t.accountId === a.id) b += t.type === 'income' ? t.amount : -t.amount;
+    if (t.accountId === a.id) b += INFLOW.has(t.type) ? t.amount : -t.amount;
     if (t.type === 'transfer' && t.toAccountId === a.id) b += t.amount;
     return b;
   }, a.opening || 0));
+  // 對象餘額：正數＝對方欠我（應收），負數＝我欠對方（應付）
+  const personBal = (id, upto) => round2(state.transactions.reduce((b, t) => (t.personId === id && DEBT[t.type] && !(upto && t.date > upto) ? b + (INFLOW.has(t.type) ? -t.amount : t.amount) : b), 0));
+  // ---- 貸款：用「目前剩餘本金＋剩餘期數＋年利率」往後試算；實際金額以銀行帳單為準，繳款時可修改 ----
+  const loanRem = (l, upto) => round2(l.balance0 - state.transactions.filter(t => t.type === 'loanprin' && t.loanId === l.id && !(upto && t.date > upto)).reduce((s, t) => s + t.amount, 0));
+  const loanPaidN = l => new Set(state.transactions.filter(t => t.loanId === l.id && t.regular).map(t => t.payId)).size;
+  const loanDue = (l, k) => { const s = new Date(l.startDate + 'T00:00:00'); let m = s.getMonth(); if (clampDay(s.getFullYear(), m, l.payDay) < s) m++; return clampDay(s.getFullYear(), m + k, l.payDay); };
+  function loanStep(l, rem, k) {
+    const left = Math.max(1, l.months - k), graceLeft = Math.max(0, (l.grace || 0) - k), na = Math.max(1, left - graceLeft), r = l.rate / 1200;
+    const interest = round2(rem * r);
+    let principal = 0;
+    if (!graceLeft) principal = na <= 1 ? rem : l.method === 'principal' ? rem / na : r ? rem * r / (1 - Math.pow(1 + r, -na)) - rem * r : rem / na;
+    principal = Math.min(rem, Math.max(0, round2(principal)));
+    return { k, interest, principal, payment: round2(interest + principal), due: loanDue(l, k) };
+  }
+  function loanInfo(l) {
+    const rem = loanRem(l), k = loanPaidN(l), plan = [];
+    let r = rem;
+    const cap = Math.max(1, l.months - k) + 1;
+    while (r > 0.004 && plan.length < Math.min(cap, 600)) { const s = loanStep(l, r, k + plan.length); r = round2(r - s.principal); plan.push({ ...s, rem: r }); }
+    return { rem, k, plan, next: plan[0] || null, totalInterest: round2(plan.reduce((s, x) => s + x.interest, 0)) };
+  }
+  // ---- 分期付款：每一期到期後等你按「確認」才記成一筆支出（App 不會在背景自動記帳）----
+  const instDate = (p, i) => { const d = new Date(p.firstDate + 'T00:00:00'); return clampDay(d.getFullYear(), d.getMonth() + i, d.getDate()); };
+  const instDone = p => { const s = new Set(); for (let i = 0; i < p.paid0; i++) s.add(i); state.transactions.forEach(t => { if (t.installId === p.id) s.add(t.idx); }); return s; };
+  const instLeft = p => Math.max(0, p.periods - instDone(p).size);
+  const pendingInst = () => {
+    const t0 = midnight(), out = [];
+    for (const p of state.installs) { const done = instDone(p); for (let i = 0; i < p.periods; i++) { const d = instDate(p, i); if (!done.has(i) && d <= t0) out.push({ p, i, date: d }); } }
+    return out.sort((a, b) => a.date - b.date);
+  };
+  const loanName = id => state.loans.find(l => l.id === id)?.name || '（已刪除的貸款）';
+  const personName = id => state.people.find(p => p.id === id)?.name || '?';
   const rank = { none: 0, ok: 0, warn: 1, over: 2 };
   const budgetState = (cat, m) => {
     const spent = sum(inMonth(m).filter(t => t.type === 'expense' && t.category === cat));
@@ -152,19 +203,25 @@ export function createLedger(root, options = {}) {
   };
 
   // ---------- 對外 API ----------
-  function clean({ type: ty, amount, accountId, toAccountId, category, date, time = '', note = '' }) {
+  function clean({ type: ty, amount, accountId, toAccountId, personId, category, date, time = '', note = '' }) {
     amount = round2(Number(amount));
-    if (!TYPES.includes(ty)) throw new Error('type 必須是 expense、income 或 transfer');
+    if (!TYPES.includes(ty)) throw new Error('type 必須是 expense、income、transfer、lend、advance、collect、borrow 或 payback');
     if (!(amount > 0)) throw new Error('請輸入大於 0 的金額。');
     if (!state.accounts.some(a => a.id === accountId)) throw new Error('請選擇帳戶。');
     if (ty === 'transfer') {
       if (!state.accounts.some(a => a.id === toAccountId)) throw new Error('請選擇轉入帳戶。');
       if (toAccountId === accountId) throw new Error('轉出與轉入帳戶不能相同。');
       category = '轉帳';
+    } else if (DEBT[ty]) {
+      if (!state.people.some(p => p.id === personId)) throw new Error('請選擇往來對象。');
+      toAccountId = undefined; category = DEBT[ty];
     } else { toAccountId = undefined; if (!category || category === '__new__') throw new Error('請選擇分類。'); }
+    if (!DEBT[ty]) personId = undefined;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) throw new Error('請選擇日期。');
     if (time && !/^\d{2}:\d{2}$/.test(time)) throw new Error('時間格式不正確。');
-    return { type: ty, amount, accountId, toAccountId, category, date, time, note: String(note).trim().slice(0, 60) };
+    const out = { type: ty, amount, accountId, toAccountId, category, date, time, note: String(note).trim().slice(0, 60) };
+    if (personId) out.personId = personId;
+    return out;
   }
   function addTransaction(input) {
     const r = clean(input), { type: ty, category, date } = r;
@@ -181,6 +238,7 @@ export function createLedger(root, options = {}) {
     const r = clean(input);
     state.transactions[i] = { ...state.transactions[i], ...r };
     if (r.type !== 'transfer') delete state.transactions[i].toAccountId;
+    if (!DEBT[r.type]) delete state.transactions[i].personId;
     month = r.date.slice(0, 7);
     update(); persist();
   }
@@ -205,6 +263,114 @@ export function createLedger(root, options = {}) {
     if (state.transactions.some(t => t.accountId === id || t.toAccountId === id)) throw new Error('這個帳戶已有記錄，無法刪除。可以改名或把它留著。');
     state.accounts = state.accounts.filter(a => a.id !== id);
     accEdit = null; update(); persist();
+  }
+  // ---- 往來對象 ----
+  function addPerson(name) {
+    name = String(name ?? '').trim().slice(0, 20);
+    if (!name) throw new Error('請輸入對象名稱。');
+    if (state.people.some(p => p.name === name)) throw new Error('已經有同名的對象了。');
+    const p = { id: uid(), name, dueDate: '' };
+    state.people.push(p); update(); persist();
+    return p.id;
+  }
+  function renamePerson(id, name) {
+    name = String(name ?? '').trim().slice(0, 20);
+    const p = state.people.find(x => x.id === id);
+    if (!p) throw new Error('找不到這個對象。');
+    if (!name) throw new Error('請輸入對象名稱。');
+    if (state.people.some(x => x.id !== id && x.name === name)) throw new Error('已經有同名的對象了。');
+    p.name = name; update(); persist();
+  }
+  function setPersonDue(id, date) {
+    const p = state.people.find(x => x.id === id);
+    if (!p) throw new Error('找不到這個對象。');
+    p.dueDate = /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? date : '';
+    update(); persist();
+  }
+  function removePerson(id) {
+    if (state.transactions.some(t => t.personId === id)) throw new Error('這個對象已有往來記錄，無法刪除。');
+    state.people = state.people.filter(p => p.id !== id);
+    if (personOpen === id) personOpen = null;
+    update(); persist();
+  }
+  // ---- 貸款 API ----
+  function saveLoan(id, v) {
+    const old = id && state.loans.find(l => l.id === id);
+    const name = String(v.name || '').trim().slice(0, 20), rate = Number(v.rate);
+    if (!name) throw new Error('請輸入貸款名稱。');
+    if (!(rate >= 0 && rate <= 100)) throw new Error('年利率請輸入 0～100（例如 2.35）。');
+    if (!state.accounts.some(a => a.id === v.accountId)) throw new Error('請選擇扣款帳戶。');
+    const day = Math.round(Number(v.payDay));
+    if (!(day >= 1 && day <= 31)) throw new Error('每月繳款日請輸入 1～31。');
+    const f = { name, kind: LOAN_KINDS[v.kind] ? v.kind : 'other', rate, payDay: day, accountId: v.accountId, method: v.method === 'principal' ? 'principal' : 'equal' };
+    let l;
+    if (old) l = { ...old, ...f };
+    else {
+      const balance0 = round2(Number(v.balance0)), months = Math.round(Number(v.months));
+      if (!(balance0 > 0)) throw new Error('請輸入目前剩餘本金。');
+      if (!(months >= 1 && months <= 600)) throw new Error('剩餘期數請輸入 1～600（月）。');
+      const grace = Math.max(0, Math.min(months - 1, Math.round(Number(v.grace)) || 0));
+      l = { id: uid(), balance0, months, grace, startDate: isDate(v.startDate) ? v.startDate : today(), ...f };
+    }
+    const i = state.loans.findIndex(x => x.id === l.id);
+    if (i < 0) state.loans.push(l); else state.loans[i] = l;
+    loanForm = null; loanOpen = l.id; update(); persist();
+    return l.id;
+  }
+  function removeLoan(id) {
+    state.loans = state.loans.filter(l => l.id !== id);
+    if (loanOpen === id) loanOpen = null;
+    loanForm = null; payMode = null; update(); persist();   // 已記的繳款記錄會保留
+  }
+  // 繳款：利息記成一筆「支出」，本金只減少貸款餘額（不算支出）
+  function payLoan(id, v) {
+    const l = state.loans.find(x => x.id === id);
+    if (!l) throw new Error('找不到這筆貸款。');
+    if (!isDate(v.date)) throw new Error('請選擇日期。');
+    if (!state.accounts.some(a => a.id === v.accountId)) throw new Error('請選擇扣款帳戶。');
+    const interest = round2(Number(v.interest) || 0), principal = round2(Number(v.principal) || 0), extra = !!v.extra;
+    if (interest < 0 || principal < 0 || interest + principal <= 0) throw new Error('請輸入利息或本金金額。');
+    if (principal > loanRem(l) + 0.005) throw new Error('本金不能超過剩餘本金。');
+    const payId = uid(), base = { accountId: v.accountId, date: v.date, time: '', note: l.name + (extra ? ' 提前還本' : ''), loanId: l.id, payId, regular: !extra, createdAt: Date.now() };
+    if (interest > 0) state.transactions.push({ id: uid(), type: 'expense', amount: interest, category: '貸款利息', ...base });
+    if (principal > 0) state.transactions.push({ id: uid(), type: 'loanprin', amount: principal, category: '貸款本金', extra, ...base, note: extra ? '提前還本' : '' });
+    payMode = null; update(); persist();
+  }
+  // ---- 分期付款 API ----
+  function saveInstall(id, v) {
+    const old = id && state.installs.find(p => p.id === id);
+    const name = String(v.name || '').trim().slice(0, 20), amount = round2(Number(v.amount)), periods = Math.round(Number(v.periods));
+    if (!name) throw new Error('請輸入品項名稱。');
+    if (!(amount > 0)) throw new Error('請輸入每期金額。');
+    if (!(periods >= 1 && periods <= 360)) throw new Error('期數請輸入 1～360。');
+    if (!isDate(v.firstDate)) throw new Error('請選擇第一期的日期。');
+    if (!state.accounts.some(a => a.id === v.accountId)) throw new Error('請選擇扣款帳戶（信用卡也可以）。');
+    const category = String(v.category || '').trim().slice(0, 12);
+    if (!category || category === '__new__') throw new Error('請選擇分類。');
+    const paid0 = Math.max(0, Math.min(periods, Math.round(Number(v.paid0)) || 0));
+    const p = { id: old ? old.id : uid(), name, amount, periods, firstDate: v.firstDate, accountId: v.accountId, category, paid0, since: old ? old.since : (v.firstDate < today() ? v.firstDate : today()) };
+    const i = state.installs.findIndex(x => x.id === p.id);
+    if (i < 0) state.installs.push(p); else state.installs[i] = p;
+    instForm = null; instOpen = p.id; update(); persist();
+    return p.id;
+  }
+  function removeInstall(id) {
+    state.installs = state.installs.filter(p => p.id !== id);
+    if (instOpen === id) instOpen = null;
+    instForm = null; update(); persist();   // 已確認的支出會保留
+  }
+  function confirmInstall(id, idx, quiet) {
+    const p = state.installs.find(x => x.id === id);
+    idx = Number(idx);
+    if (!p || !Number.isInteger(idx) || idx < 0 || idx >= p.periods || instDone(p).has(idx)) return;
+    state.transactions.push({ id: uid(), type: 'expense', amount: p.amount, accountId: p.accountId, category: p.category, date: ymd(instDate(p, idx)), time: '', note: `${p.name} 第 ${idx + 1}/${p.periods} 期`, installId: p.id, idx, createdAt: Date.now() });
+    if (!quiet) { update(); persist(); }
+  }
+  function getDebt() {
+    const loans = state.loans.map(l => { const i = loanInfo(l); return { id: l.id, name: l.name, kind: l.kind, rate: l.rate, remaining: i.rem, left: i.plan.length, payment: i.next?.payment || 0, interest: i.next?.interest || 0, principal: i.next?.principal || 0, due: i.next ? ymd(i.next.due) : '', totalInterest: i.totalInterest }; });
+    const installs = state.installs.map(p => { const left = instLeft(p); return { id: p.id, name: p.name, amount: p.amount, left, remaining: round2(left * p.amount) }; });
+    const monthly = round2(loans.reduce((s, x) => s + x.payment, 0) + installs.filter(x => x.left > 0).reduce((s, x) => s + x.amount, 0));
+    return { loans, installs, monthly, remaining: round2(loans.reduce((s, x) => s + x.remaining, 0) + installs.reduce((s, x) => s + x.remaining, 0)) };
   }
   function replaceState(s) {
     let cats = s.categories;
@@ -259,7 +425,7 @@ export function createLedger(root, options = {}) {
   function setBudget(cat, amount) { putBudget(cat, amount); update(); persist(); }
   function setMasked(v) {
     masked = !!v;
-    if (masked) { accEdit = null; editing = false; if (editId) endEdit(); }   // 關掉所有會露出金額的編輯畫面
+    if (masked) { accEdit = null; editing = false; loanForm = null; instForm = null; payMode = null; if (editId) endEdit(); }   // 關掉所有會露出金額的編輯畫面
     update();
   }
   function setMonth(m) { if (/^\d{4}-\d{2}$/.test(m)) { month = m; update(); } }
@@ -290,7 +456,30 @@ export function createLedger(root, options = {}) {
       }
       if (c.limit && c.ratio >= opt.warnAt) cards.push(`<p class="ledger__alert ${c.ratio > 1 ? 'is-over' : 'is-warn'}"><b>額度</b> ${esc(a.name)} 已使用 ${Math.round(c.ratio * 100)}%，可用 ${money(c.avail)}</p>`);
     }
-    $('alerts').innerHTML = [...cards, ...budget].join('');
+    const ppl = [];
+    for (const p of state.people) {
+      const b = personBal(p.id);
+      if (!b || !p.dueDate) continue;
+      const d = new Date(p.dueDate + 'T00:00:00'), days = Math.round((d - midnight()) / 864e5), mine = b > 0;
+      const who = mine ? `${esc(p.name)} 欠你 ${money(b)}` : `你欠 ${esc(p.name)} ${money(-b)}`;
+      if (days < 0) ppl.push(`<p class="ledger__alert is-over"><b>${mine ? '逾期未收' : '逾期未還'}</b> ${who}，預計日是 ${mmdd(d)}</p>`);
+      else if (days <= 3) ppl.push(`<p class="ledger__alert is-warn"><b>${mine ? '收款提醒' : '還款提醒'}</b> ${who}，${days === 0 ? '今天' : days + ' 天後'}（${mmdd(d)}）</p>`);
+    }
+    for (const l of state.loans) {
+      const i = loanInfo(l);
+      if (!i.next) continue;
+      const days = Math.round((i.next.due - midnight()) / 864e5), txt = `${esc(l.name)} 本期應繳約 ${money(i.next.payment)}（${mmdd(i.next.due)}）`;
+      if (days < 0) ppl.push(`<p class="ledger__alert is-over"><b>貸款逾期</b> ${txt}，還沒有記錄繳款</p>`);
+      else if (days <= 3) ppl.push(`<p class="ledger__alert is-warn"><b>貸款繳款</b> ${txt}${days === 0 ? '，今天到期' : '，' + days + ' 天後到期'}</p>`);
+    }
+    $('alerts').innerHTML = [...cards, ...ppl, ...budget].join('');
+  }
+
+  function renderPending() {
+    const list = pendingInst();
+    $('pending').innerHTML = !list.length ? '' :
+      `<div class="ledger__sec-head"><h3>待確認的分期付款</h3>${list.length > 1 ? '<button class="ledger__link" type="button" data-act="inst-confirm-all">全部確認</button>' : ''}</div><ul>` +
+      list.map(x => `<li class="ledger__pend"><span>${esc(x.p.name)}<small class="ledger__muted">第 ${x.i + 1}/${x.p.periods} 期 · ${mmdd(x.date)} · ${esc(accName(x.p.accountId))}</small></span><span class="ledger__num">${money(x.p.amount)}</span><button class="ledger__pay" type="button" data-act="inst-confirm" data-id="${esc(x.p.id)}" data-idx="${x.i}">確認</button></li>`).join('') + '</ul>';
   }
 
   function renderCatMgr() {
@@ -350,15 +539,15 @@ export function createLedger(root, options = {}) {
 
   function renderList() {
     const q = $('search').value.trim().toLowerCase();
-    const tx = (q ? state.transactions.filter(t => [t.category, t.note, accName(t.accountId), t.toAccountId ? accName(t.toAccountId) : '', String(t.amount), t.time, t.date].join(' ').toLowerCase().includes(q)) : inMonth()).sort((a, b) => b.date.localeCompare(a.date) || (b.time || '').localeCompare(a.time || '') || (b.createdAt || 0) - (a.createdAt || 0));
+    const tx = (q ? state.transactions.filter(t => [t.category, t.note, t.loanId ? loanName(t.loanId) : '', accName(t.accountId), t.toAccountId ? accName(t.toAccountId) : '', t.personId ? personName(t.personId) : '', String(t.amount), t.time, t.date].join(' ').toLowerCase().includes(q)) : inMonth()).sort((a, b) => b.date.localeCompare(a.date) || (b.time || '').localeCompare(a.time || '') || (b.createdAt || 0) - (a.createdAt || 0));
     $('list').innerHTML = `<div class="ledger__sec-head"><h3>${q ? '搜尋結果（全部月份）' : '本月記錄'}</h3><small class="ledger__muted">${tx.length} 筆</small></div>` +
       (tx.length
         ? `<ul>${tx.map(t => {
-          const sub = t.type === 'transfer' ? `${accName(t.accountId)} → ${accName(t.toAccountId)}` : accName(t.accountId);
+          const sub = t.type === 'transfer' ? `${accName(t.accountId)} → ${accName(t.toAccountId)}` : DEBT[t.type] ? `${personName(t.personId)} · ${accName(t.accountId)}` : t.type === 'loanprin' ? `${loanName(t.loanId)} · ${accName(t.accountId)}` : accName(t.accountId);
           const sign = t.type === 'income' ? '+' : t.type === 'expense' ? '−' : '';
           return `<li class="ledger__tx"><time datetime="${t.date}${t.time ? 'T' + t.time : ''}">${(q ? t.date.slice(2) : t.date.slice(5)).replaceAll('-', '/')}${t.time ? `<small>${t.time}</small>` : ''}</time>` +
             `<button type="button" class="ledger__tx-main" data-act="edit" data-id="${esc(t.id)}" aria-label="編輯 ${esc(t.category)} ${money(t.amount)}"><span>${esc(t.category)}</span><small class="ledger__muted">${esc(sub)}${t.note ? ' · ' + esc(t.note) : ''}</small></button>` +
-            `<span class="ledger__num is-${t.type}">${sign}${money(t.amount)}</span>` +
+            `<span class="ledger__num is-${DEBT[t.type] || t.type === 'loanprin' ? 'transfer' : t.type}">${sign}${money(t.amount)}</span>` +
             `<button class="ledger__x" type="button" data-act="remove" data-id="${esc(t.id)}" aria-label="刪除 ${esc(t.category)} ${money(t.amount)}">×</button></li>`;
         }).join('')}</ul>`
         : `<p class="ledger__empty">${q ? '找不到符合的記錄。' : '這個月還沒有記錄。在上方新增第一筆。'}</p>`);
@@ -438,17 +627,131 @@ export function createLedger(root, options = {}) {
       return `<h3 class="ledger__gt">${KINDS[k]}</h3><ul class="ledger__acclist">${items.map(({ a, b }) => k === 'credit' ? cardBlock(a) :
         `<li class="ledger__accrow"><button type="button" class="ledger__acc" data-act="acc-edit" data-id="${esc(a.id)}"><span class="ledger__acc-name">${esc(a.name)}</span><span class="ledger__num">${money(b)}</span></button></li>`).join('')}</ul>`;
     }).join('');
-    const net = round2(assets - debt);
-    $('accounts').innerHTML =
-      `<dl class="ledger__sum"><div class="ledger__bal"><dt>淨資產</dt><dd class="${net < 0 ? 'is-neg' : ''}">${money(net)}</dd></div><div><dt>資產</dt><dd>${money(assets)}</dd></div><div><dt>負債</dt><dd>${money(debt)}</dd></div></dl>` +
-      `<div class="ledger__sec-head"><h3>我的帳戶</h3>${f ? '' : '<button class="ledger__link" type="button" data-act="acc-new">新增帳戶</button>'}</div>${form}${groups}`;
+    const pb = state.people.map(p => personBal(p.id)), recv = round2(pb.filter(x => x > 0).reduce((s, x) => s + x, 0)), owe = round2(0 - pb.filter(x => x < 0).reduce((s, x) => s + x, 0));
+    const loansRem = round2(state.loans.reduce((s, l) => s + loanRem(l), 0)), instsRem = round2(state.installs.reduce((s, p) => s + p.amount * instLeft(p), 0)), other = round2(owe + loansRem + instsRem);
+    const net = round2(assets + recv - debt - other);
+    const seg = `<div class="ledger__seg" role="group" aria-label="切換">` + [['acc', '帳戶'], ['ppl', '往來'], ['loan', '貸款']].map(([v, n]) => `<button type="button" data-act="view" data-v="${v}" aria-pressed="${view === v}">${n}</button>`).join('') + `</div>`;
+    $('accounts').innerHTML = seg +
+      `<dl class="ledger__sum"><div class="ledger__bal"><dt>淨資產</dt><dd class="${net < 0 ? 'is-neg' : ''}">${money(net)}</dd></div><div><dt>資產${recv ? '（含應收）' : ''}</dt><dd>${money(round2(assets + recv))}</dd></div><div><dt>負債${other ? '（含貸款・應付）' : ''}</dt><dd>${money(round2(debt + other))}</dd></div></dl>` +
+      (view === 'ppl' ? renderPeople(recv, owe) : view === 'loan' ? renderLoans() : `<div class="ledger__sec-head"><h3>我的帳戶</h3>${f ? '' : '<button class="ledger__link" type="button" data-act="acc-new">新增帳戶</button>'}</div>${form}${groups}`);
+    $('accounts').querySelectorAll('[data-pct]').forEach(el => { el.style.width = el.dataset.pct + '%'; });
+  }
+
+  // ---------- 貸款與分期 ----------
+  const accOpts = sel => state.accounts.map(a => `<option value="${esc(a.id)}"${a.id === sel ? ' selected' : ''}>${esc(a.name)}</option>`).join('');
+  const dstr = d => `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`;
+  function renderLoans() {
+    if (loanForm) return loanFormHtml();
+    if (instForm) return instFormHtml();
+    const lo = state.loans.find(l => l.id === loanOpen); if (lo) return loanDetail(lo);
+    const ip = state.installs.find(p => p.id === instOpen); if (ip) return instDetail(ip);
+    const L = state.loans.map(l => ({ l, i: loanInfo(l) })), I = state.installs.map(p => ({ p, left: instLeft(p) }));
+    const total = round2(L.reduce((s, x) => s + x.i.rem, 0) + I.reduce((s, x) => s + x.left * x.p.amount, 0)), monthly = getDebt().monthly;
+    const lrows = L.length ? `<ul class="ledger__acclist">${L.map(({ l, i }) => `<li class="ledger__accrow"><button type="button" class="ledger__acc" data-act="loan-open" data-id="${esc(l.id)}"><span class="ledger__acc-name">${esc(l.name)}<small class="ledger__muted">${LOAN_KINDS[l.kind]} · ${i.next ? `下期 ${mmdd(i.next.due)} · 約 ${money(i.next.payment)}` : '已還清'}</small></span><span class="ledger__num">${money(i.rem)}</span></button></li>`).join('')}</ul>` : '<p class="ledger__empty">還沒有貸款。車貸、房貸、信貸都可以在這裡記。</p>';
+    const irows = I.length ? `<ul class="ledger__acclist">${I.map(({ p, left }) => `<li class="ledger__accrow"><button type="button" class="ledger__acc" data-act="inst-open" data-id="${esc(p.id)}"><span class="ledger__acc-name">${esc(p.name)}<small class="ledger__muted">${left ? `還剩 ${left} 期 · 每期 ${money(p.amount)}` : '已繳清'}</small></span><span class="ledger__num">${money(round2(left * p.amount))}</span></button></li>`).join('')}</ul>` : '<p class="ledger__empty">還沒有分期付款。手機、家電、旅遊分期都可以在這裡記。</p>';
+    return `<dl class="ledger__sum ledger__sum--two"><div><dt>貸款與分期餘額</dt><dd>${money(total)}</dd></div><div><dt>每月固定還款（估）</dt><dd>${money(monthly)}</dd></div></dl>` +
+      `<div class="ledger__sec-head"><h3>貸款</h3><button class="ledger__link" type="button" data-act="loan-new">新增貸款</button></div>${lrows}` +
+      `<div class="ledger__sec-head"><h3>分期付款</h3><button class="ledger__link" type="button" data-act="inst-new">新增分期</button></div>${irows}`;
+  }
+  function loanFormHtml() {
+    const old = loanForm === 'new' ? null : state.loans.find(l => l.id === loanForm);
+    const v = old || { kind: 'car', method: 'equal', accountId: (state.accounts.find(a => a.kind === 'bank') || state.accounts[0]).id };
+    const fld = (label, name, val, attrs = '') => `<label class="ledger__field"><span>${label}</span><input name="${name}" value="${esc(val ?? '')}" ${attrs}></label>`;
+    return `<div class="ledger__sec-head"><h3>${old ? '編輯貸款' : '新增貸款'}</h3></div><form class="ledger__acc-form" data-form="loan" data-id="${esc(old?.id || '')}" novalidate>` +
+      fld('名稱', 'lname', old?.name, 'type="text" maxlength="20" placeholder="例如：Model Y 車貸"') +
+      `<label class="ledger__field"><span>類型</span><select name="lkind">${Object.entries(LOAN_KINDS).map(([k, n]) => `<option value="${k}"${v.kind === k ? ' selected' : ''}>${n}</option>`).join('')}</select></label>` +
+      (old ? '' : fld('目前剩餘本金', 'lbal', '', 'type="number" min="0" step="any" inputmode="decimal" placeholder="還欠銀行多少"') + fld('剩餘期數（月）', 'lmonths', '', 'type="number" min="1" max="600" inputmode="numeric" placeholder="例如 60"')) +
+      fld('年利率 %', 'lrate', old ? old.rate : '', 'type="number" min="0" max="100" step="any" inputmode="decimal" placeholder="例如 2.35"') +
+      `<label class="ledger__field"><span>還款方式</span><select name="lmethod">${Object.entries(LOAN_METHODS).map(([k, n]) => `<option value="${k}"${v.method === k ? ' selected' : ''}>${n}</option>`).join('')}</select></label>` +
+      fld('每月繳款日', 'lday', old?.payDay, 'type="number" min="1" max="31" inputmode="numeric"') +
+      `<label class="ledger__field"><span>扣款帳戶</span><select name="lacc">${accOpts(v.accountId)}</select></label>` +
+      (old ? '' : fld('寬限期剩餘月數（只繳利息，沒有填 0）', 'lgrace', '', 'type="number" min="0" inputmode="numeric" placeholder="0"') + fld('從哪天開始記錄', 'lstart', today(), 'type="date"')) +
+      `<p class="ledger__hint ledger__field--wide">「目前剩餘本金」看銀行最近一期帳單。系統依剩餘本金、期數與利率試算每期的利息與本金，實際以銀行帳單為準，記錄繳款時可以直接修改金額。${old ? '要改剩餘本金或期數，請刪除後重建。利率調整時直接改年利率即可。' : ''}</p>` +
+      `<p class="ledger__error" data-acc-error role="alert"></p><div class="ledger__actions"><button class="ledger__btn ledger__btn--primary" type="submit">儲存</button><button class="ledger__btn" type="button" data-act="loan-formcancel">取消</button></div></form>`;
+  }
+  function loanDetail(l) {
+    const i = loanInfo(l), pct = Math.min(100, Math.max(0, (l.balance0 - i.rem) / l.balance0 * 100));
+    const tx = state.transactions.filter(t => t.loanId === l.id).sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0));
+    const nx = i.next, dueDays = nx ? Math.round((nx.due - midnight()) / 864e5) : 0;
+    let pay = '';
+    if (payMode && nx) {
+      const ex = payMode === 'extra';
+      pay = `<form class="ledger__acc-form" data-form="loanpay" data-id="${esc(l.id)}" data-mode="${payMode}" novalidate><label class="ledger__field"><span>日期</span><input name="pdate" type="date" value="${today()}"></label>` +
+        `<label class="ledger__field"><span>扣款帳戶</span><select name="pacc">${accOpts(l.accountId)}</select></label>` +
+        `<label class="ledger__field"><span>利息（算支出）</span><input name="pint" type="number" min="0" step="any" inputmode="decimal" value="${ex ? '' : nx.interest}" placeholder="0"></label>` +
+        `<label class="ledger__field"><span>${ex ? '提前還的本金' : '本金（不算支出）'}</span><input name="ppri" type="number" min="0" step="any" inputmode="decimal" value="${ex ? '' : nx.principal}" placeholder="0"></label>` +
+        `<p class="ledger__hint ledger__field--wide">${ex ? '提前還本會直接減少剩餘本金，之後每期的利息與應繳金額會重新試算。' : '預設是試算值。如果銀行帳單的金額不同，請直接改成帳單上的利息與本金。'}</p>` +
+        `<p class="ledger__error" data-acc-error role="alert"></p><div class="ledger__actions"><button class="ledger__btn ledger__btn--primary" type="submit">${ex ? '記錄提前還本' : '記錄本期繳款'}</button><button class="ledger__btn" type="button" data-act="loan-paycancel">取消</button></div></form>`;
+    }
+    const plan = i.plan.slice(0, 12);
+    return `<div class="ledger__sec-head"><button class="ledger__link" type="button" data-act="loan-back">‹ 貸款</button><span class="ledger__links"><button class="ledger__link" type="button" data-act="loan-edit" data-id="${esc(l.id)}">編輯</button><button class="ledger__link ledger__link--danger" type="button" data-act="loan-del" data-id="${esc(l.id)}">刪除</button></span></div>` +
+      `<div class="ledger__person"><h3>${esc(l.name)}</h3><p class="ledger__status">${LOAN_KINDS[l.kind]} · 年利率 ${l.rate}% · ${LOAN_METHODS[l.method].split('（')[0]}<br>${i.rem > 0 ? `剩餘本金 <b>${money(i.rem)}</b>` : '<b>已還清</b>'}</p>` +
+      `<div class="ledger__meter" aria-hidden="true"><i data-pct="${pct.toFixed(1)}"></i></div><small class="ledger__muted">已還 ${Math.round(pct)}%（${money(round2(l.balance0 - i.rem))} / ${money(l.balance0)}）</small>` +
+      (nx ? `<dl class="ledger__cc-grid"><div><dt>下期應繳（估）</dt><dd>${money(nx.payment)} <small class="ledger__st ${dueDays < 0 ? 'is-over' : dueDays <= 3 ? 'is-warn' : ''}">${mmdd(nx.due)}${dueDays < 0 ? ` 逾期 ${-dueDays} 天` : dueDays === 0 ? ' 今天' : ` · ${dueDays} 天後`}</small></dd></div><div><dt>其中利息／本金</dt><dd>${money(nx.interest)} / ${money(nx.principal)}</dd></div><div><dt>剩餘期數</dt><dd>${i.plan.length} 期 <small class="ledger__st">約 ${dstr(i.plan[i.plan.length - 1].due)} 還清</small></dd></div><div><dt>預估剩餘利息</dt><dd>${money(i.totalInterest)}</dd></div></dl>` +
+        `<div class="ledger__actions" style="margin-top:16px"><button class="ledger__btn ledger__btn--primary" type="button" data-act="loan-pay" data-mode="regular">記錄本期繳款</button><button class="ledger__btn" type="button" data-act="loan-pay" data-mode="extra">提前還本</button></div>` : '') + `</div>` + pay +
+      (plan.length ? `<details class="ledger__cc-more"><summary>還款試算（接下來 ${plan.length} 期）</summary><ul class="ledger__cc-tx">${plan.map(x => `<li><time>${dstr(x.due).slice(2)}</time><span class="ledger__muted">利息 ${money(x.interest)} · 本金 ${money(x.principal)}</span><span class="ledger__num">${money(x.payment)}</span></li>`).join('')}</ul><p class="ledger__hint">利息以每月 年利率÷12 試算，銀行若按實際天數計息會有小差異。</p></details>` : '') +
+      `<div class="ledger__sec-head"><h3>繳款記錄</h3><small class="ledger__muted">${tx.length} 筆</small></div>` +
+      (tx.length ? `<ul>${tx.map(t => `<li class="ledger__tx"><time>${t.date.slice(2).replaceAll('-', '/')}</time><button type="button" class="ledger__tx-main" data-act="edit" data-id="${esc(t.id)}"><span>${t.type === 'loanprin' ? (t.extra ? '提前還本' : '本金') : '利息'}</span><small class="ledger__muted">${esc(accName(t.accountId))}</small></button><span class="ledger__num is-${t.type === 'expense' ? 'expense' : 'transfer'}">${t.type === 'expense' ? '−' : ''}${money(t.amount)}</span><button class="ledger__x" type="button" data-act="remove" data-id="${esc(t.id)}" aria-label="刪除">×</button></li>`).join('')}</ul><p class="ledger__hint">利息算在每月支出裡，本金只減少貸款餘額。</p>` : '<p class="ledger__empty">還沒有繳款記錄。</p>');
+  }
+  function instFormHtml() {
+    const old = instForm === 'new' ? null : state.installs.find(p => p.id === instForm);
+    const cats = [...state.categories.expense]; if (old && !cats.includes(old.category)) cats.push(old.category);
+    const fld = (label, name, val, attrs = '') => `<label class="ledger__field"><span>${label}</span><input name="${name}" value="${esc(val ?? '')}" ${attrs}></label>`;
+    return `<div class="ledger__sec-head"><h3>${old ? '編輯分期' : '新增分期'}</h3></div><form class="ledger__acc-form" data-form="inst" data-id="${esc(old?.id || '')}" novalidate>` +
+      fld('品項', 'iname', old?.name, 'type="text" maxlength="20" placeholder="例如：iPhone 分期"') +
+      fld('每期金額', 'iamt', old?.amount, 'type="number" min="0" step="any" inputmode="decimal"') +
+      fld('期數', 'iper', old?.periods, 'type="number" min="1" max="360" inputmode="numeric" placeholder="例如 12"') +
+      fld('第一期日期', 'istart', old?.firstDate || today(), 'type="date"') +
+      `<label class="ledger__field"><span>扣款帳戶／信用卡</span><select name="iacc">${accOpts(old?.accountId || (state.accounts.find(a => a.kind === 'credit') || state.accounts[0]).id)}</select></label>` +
+      `<label class="ledger__field"><span>分類</span><select name="icat">${cats.map(c => `<option value="${esc(c)}"${(old?.category || (cats.includes('購物') ? '購物' : cats[0])) === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></label>` +
+      fld('已經繳了幾期（沒有填 0）', 'ipaid', old?.paid0 || '', 'type="number" min="0" inputmode="numeric" placeholder="0"') +
+      `<p class="ledger__hint ledger__field--wide">每一期到期日，記帳頁會出現「待確認」，按一下才記成一筆支出（信用卡就記在那張卡上）。App 不會在背景自動記帳。</p>` +
+      `<p class="ledger__error" data-acc-error role="alert"></p><div class="ledger__actions"><button class="ledger__btn ledger__btn--primary" type="submit">儲存</button><button class="ledger__btn" type="button" data-act="inst-formcancel">取消</button></div></form>`;
+  }
+  function instDetail(p) {
+    const done = instDone(p), conf = new Set(state.transactions.filter(t => t.installId === p.id).map(t => t.idx)), t0 = midnight(), left = p.periods - done.size;
+    const rows = Array.from({ length: p.periods }, (_, k) => {
+      const d = instDate(p, k), isDone = done.has(k), due = !isDone && d <= t0;
+      const st = isDone ? (conf.has(k) ? '已記帳' : '先前已繳') : due ? `<button class="ledger__pay" type="button" data-act="inst-confirm" data-id="${esc(p.id)}" data-idx="${k}">確認</button>` : '尚未到期';
+      return `<li><time>${dstr(d).slice(2)}</time><span class="ledger__muted">第 ${k + 1}/${p.periods} 期 · ${st}</span><span class="ledger__num${isDone ? ' is-transfer' : ''}">${money(p.amount)}</span></li>`;
+    }).join('');
+    return `<div class="ledger__sec-head"><button class="ledger__link" type="button" data-act="inst-back">‹ 貸款</button><span class="ledger__links"><button class="ledger__link" type="button" data-act="inst-edit" data-id="${esc(p.id)}">編輯</button><button class="ledger__link ledger__link--danger" type="button" data-act="inst-del" data-id="${esc(p.id)}">刪除</button></span></div>` +
+      `<div class="ledger__person"><h3>${esc(p.name)}</h3><p class="ledger__status">${left ? `還剩 <b>${left}</b> 期，共 <b>${money(round2(left * p.amount))}</b>` : '<b>已繳清</b>'}</p>` +
+      `<dl class="ledger__cc-grid"><div><dt>每期金額</dt><dd>${money(p.amount)}</dd></div><div><dt>總金額</dt><dd>${money(round2(p.amount * p.periods))}</dd></div><div><dt>扣款帳戶</dt><dd>${esc(accName(p.accountId))}</dd></div><div><dt>分類</dt><dd>${esc(p.category)}</dd></div></dl></div>` +
+      `<ul class="ledger__cc-tx ledger__instlist">${rows}</ul><p class="ledger__hint">每一期確認後會各記成一筆「${esc(p.category)}」支出。刪除這筆分期不會刪掉已記的支出。</p>`;
+  }
+
+  function renderPeople(recv, owe) {
+    const o = personOpen && state.people.find(p => p.id === personOpen);
+    if (o) return personDetail(o);
+    const rows = state.people.map(p => ({ p, b: personBal(p.id) })).sort((x, y) => Math.abs(y.b) - Math.abs(x.b));
+    const list = rows.length ? `<ul class="ledger__acclist">${rows.map(({ p, b }) =>
+      `<li class="ledger__accrow"><button type="button" class="ledger__acc" data-act="ppl-open" data-id="${esc(p.id)}"><span class="ledger__acc-name">${esc(p.name)}<small class="ledger__muted">${b > 0 ? '對方欠我' : b < 0 ? '我欠對方' : '已結清'}${p.dueDate && b ? ' · 預計 ' + p.dueDate.slice(5).replace('-', '/') : ''}</small></span><span class="ledger__num${b > 0 ? ' is-income' : ''}">${money(Math.abs(b))}</span></button></li>`).join('')}</ul>`
+      : '<p class="ledger__empty">還沒有往來對象。在「記帳」選「往來」記第一筆，或按右上角新增對象。</p>';
+    return `<dl class="ledger__sum ledger__sum--two"><div><dt>應收（別人欠我）</dt><dd class="${recv ? 'is-pos' : ''}">${money(recv)}</dd></div><div><dt>應付（我欠別人）</dt><dd>${money(owe)}</dd></div></dl>` +
+      `<div class="ledger__sec-head"><h3>往來對象</h3><button class="ledger__link" type="button" data-act="ppl-add">新增對象</button></div>${list}`;
+  }
+  function personDetail(p) {
+    const b = personBal(p.id), tx = state.transactions.filter(t => t.personId === p.id).sort((x, y) => y.date.localeCompare(x.date) || (y.time || '').localeCompare(x.time || '') || (y.createdAt || 0) - (x.createdAt || 0));
+    const status = b > 0 ? `對方欠我 <b>${money(b)}</b>` : b < 0 ? `我欠對方 <b>${money(-b)}</b>` : '已結清';
+    const btn = (kind, label, primary) => `<button type="button" class="ledger__btn${primary ? ' ledger__btn--primary' : ''}" data-act="ppl-act" data-kind="${kind}" data-id="${esc(p.id)}">${label}</button>`;
+    return `<div class="ledger__sec-head"><button class="ledger__link" type="button" data-act="ppl-back">‹ 往來</button><span class="ledger__links"><button class="ledger__link" type="button" data-act="ppl-rename" data-id="${esc(p.id)}">改名</button>` +
+      `<button class="ledger__link ledger__link--danger" type="button" data-act="ppl-del" data-id="${esc(p.id)}">刪除</button></span></div>` +
+      `<div class="ledger__person"><h3>${esc(p.name)}</h3><p class="ledger__status">${status}</p>` +
+      `<div class="ledger__actions">${b > 0 ? btn('collect', '收回', true) : b < 0 ? btn('payback', '還款', true) : ''}${btn(b < 0 ? 'borrow' : 'lend', b < 0 ? '再借入' : '再借出', b === 0)}${btn('advance', '代墊')}</div>` +
+      `<label class="ledger__field"><span>預計${b < 0 ? '還款' : '收回'}日（選填，到期前 3 天提醒）</span><input type="date" data-pdue="${esc(p.id)}" value="${esc(p.dueDate || '')}"></label></div>` +
+      `<div class="ledger__sec-head"><h3>往來記錄</h3><small class="ledger__muted">${tx.length} 筆</small></div>` +
+      (tx.length ? `<ul>${tx.map(t => `<li class="ledger__tx"><time>${t.date.slice(2).replaceAll('-', '/')}${t.time ? `<small>${t.time}</small>` : ''}</time>` +
+        `<button type="button" class="ledger__tx-main" data-act="edit" data-id="${esc(t.id)}"><span>${DEBT[t.type]}</span><small class="ledger__muted">${esc(accName(t.accountId))}${t.note ? ' · ' + esc(t.note) : ''}</small></button>` +
+        `<span class="ledger__num is-transfer">${money(t.amount)}</span><button class="ledger__x" type="button" data-act="remove" data-id="${esc(t.id)}" aria-label="刪除">×</button></li>`).join('')}</ul>` : '<p class="ledger__empty">還沒有記錄。</p>');
   }
 
   function update() {
     $('month').textContent = `${month.slice(0, 4)} 年 ${Number(month.slice(5))} 月`;
     fillAccounts();
-    if (type !== 'transfer') fillCats();
-    renderSummary(); renderAlerts(); renderCats(); renderDaily(); renderList(); renderAccounts();
+    if (type === 'expense' || type === 'income') fillCats();
+    if (type === 'debt') fillPeople();
+    renderSummary(); renderAlerts(); renderPending(); renderCats(); renderDaily(); renderList(); renderAccounts();
     root.querySelectorAll('[data-pct]').forEach(el => { el.style.width = el.dataset.pct + '%'; });
   }
 
@@ -463,10 +766,18 @@ export function createLedger(root, options = {}) {
     if (f.toAccount.value === f.account.value && state.accounts.length > 1) f.toAccount.value = state.accounts.find(a => a.id !== f.account.value).id;
   }
   function syncForm() {
-    const f = $('form'), tr = type === 'transfer';
-    $('catWrap').hidden = tr; $('toWrap').hidden = !tr;
-    $('accLabel').textContent = tr ? '轉出帳戶' : '帳戶';
-    if (!tr) fillCats();
+    const f = $('form'), tr = type === 'transfer', db = type === 'debt', cat = type === 'expense' || type === 'income';
+    $('catWrap').hidden = !cat; $('toWrap').hidden = !tr;
+    $('debtWrap').hidden = !db; $('personWrap').hidden = !db; $('debtHint').hidden = !db;
+    $('accLabel').textContent = tr ? '轉出帳戶' : db ? (INFLOW.has(f.debtKind.value) ? '入帳帳戶' : '付款帳戶') : '帳戶';
+    if (db) { fillPeople(); $('debtHint').textContent = DEBT_HINT[f.debtKind.value]; }
+    if (cat) fillCats();
+  }
+  function fillPeople(sel) {
+    const f = $('form'), old = sel ?? (f.person.value === '__new__' ? lastPerson : f.person.value);
+    f.person.innerHTML = state.people.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('') + '<option value="__new__">＋ 新增對象…</option>';
+    if (state.people.some(p => p.id === old)) f.person.value = old;
+    lastPerson = f.person.value;
   }
   function fillCats(sel) {
     const f = $('form'), cur = f.category.value, old = sel ?? (cur === '__new__' ? lastCat : cur);
@@ -479,10 +790,12 @@ export function createLedger(root, options = {}) {
   function startEdit(id) {
     const t = state.transactions.find(x => x.id === id), f = $('form');
     if (!t) return;
-    editId = id; type = t.type;
+    editId = id; type = DEBT[t.type] ? 'debt' : t.type;
     f.querySelector(`input[name="type"][value="${type}"]`).checked = true;
+    if (type === 'debt') f.debtKind.value = t.type;
     syncForm();
-    if (type !== 'transfer') {
+    if (type === 'debt') f.person.value = t.personId;
+    if (type === 'expense' || type === 'income') {
       if (![...f.category.options].some(o => o.value === t.category)) f.category.add(new Option(t.category));
       f.category.value = t.category;
     }
@@ -512,12 +825,26 @@ export function createLedger(root, options = {}) {
     f.amount.focus();
   }
 
+  // 往來快捷：從對象頁帶入「收回／還款／再借出…」，收回與還款預設填入全部餘額
+  function startDebt(personId, kind) {
+    const f = $('form'), acc = state.accounts.find(a => a.kind === 'bank') || state.accounts.find(a => a.kind !== 'credit') || state.accounts[0];
+    if (!state.people.some(p => p.id === personId) || !DEBT[kind]) return;
+    if (editId) endEdit();
+    type = 'debt'; f.querySelector('input[name="type"][value="debt"]').checked = true;
+    f.debtKind.value = kind; syncForm(); fillPeople(personId); f.account.value = acc.id;
+    const b = Math.abs(personBal(personId));
+    f.amount.value = (kind === 'collect' || kind === 'payback') && b && !masked ? b : '';
+    f.date.value = today(); f.time.value = nowTime(); f.note.value = ''; showError('');
+    root.dispatchEvent(new CustomEvent('ledger:goto', { detail: 'records' }));
+    f.amount.focus();
+  }
+
   // ---------- 事件 ----------
   const onClick = e => {
     const b = e.target.closest('[data-act]');
     if (!b) return;
     const act = b.dataset.act;
-    if (masked && ['edit', 'acc-edit', 'budget-edit'].includes(act)) return alert('金額已隱藏。請先點右上角的眼睛顯示金額，再編輯。');
+    if (masked && ['edit', 'acc-edit', 'budget-edit', 'ppl-rename', 'loan-new', 'loan-edit', 'loan-pay', 'inst-new', 'inst-edit'].includes(act)) return alert('金額已隱藏。請先點右上角的眼睛顯示金額，再編輯。');
     if (act === 'prev' || act === 'next') {
       const [y, m] = month.split('-').map(Number), d = new Date(y, m - 1 + (act === 'next' ? 1 : -1), 1);
       setMonth(`${d.getFullYear()}-${pad(d.getMonth() + 1)}`);
@@ -525,7 +852,38 @@ export function createLedger(root, options = {}) {
       if (confirm('刪除這筆記錄？')) removeTransaction(b.dataset.id);
     } else if (act === 'budget-edit' || act === 'budget-cancel') {
       editing = act === 'budget-edit'; update();
-    } else if (act === 'edit') startEdit(b.dataset.id);
+    } else if (act === 'edit') { if (state.transactions.find(t => t.id === b.dataset.id)?.type === 'loanprin') return alert('貸款本金記錄無法修改。請刪除後，到「資產 › 貸款」重新記錄。'); startEdit(b.dataset.id); if (b.closest('[data-r="accounts"]')) root.dispatchEvent(new CustomEvent('ledger:goto', { detail: 'records' })); }
+    else if (act === 'view') { view = b.dataset.v; personOpen = loanOpen = instOpen = loanForm = instForm = payMode = null; renderAccounts(); }
+    else if (act === 'loan-new') { loanForm = 'new'; renderAccounts(); }
+    else if (act === 'loan-open') { loanOpen = b.dataset.id; payMode = null; renderAccounts(); scrollTo(0, 0); }
+    else if (act === 'loan-back') { loanOpen = null; loanForm = null; payMode = null; renderAccounts(); }
+    else if (act === 'loan-edit') { loanForm = b.dataset.id; payMode = null; renderAccounts(); }
+    else if (act === 'loan-formcancel') { loanForm = null; renderAccounts(); }
+    else if (act === 'loan-pay') { payMode = b.dataset.mode; renderAccounts(); }
+    else if (act === 'loan-paycancel') { payMode = null; renderAccounts(); }
+    else if (act === 'loan-del') { if (confirm('刪除這筆貸款？已經記下的繳款記錄會保留。')) removeLoan(b.dataset.id); }
+    else if (act === 'inst-new') { instForm = 'new'; renderAccounts(); }
+    else if (act === 'inst-open') { instOpen = b.dataset.id; renderAccounts(); scrollTo(0, 0); }
+    else if (act === 'inst-back') { instOpen = null; instForm = null; renderAccounts(); }
+    else if (act === 'inst-edit') { instForm = b.dataset.id; renderAccounts(); }
+    else if (act === 'inst-formcancel') { instForm = null; renderAccounts(); }
+    else if (act === 'inst-del') { if (confirm('刪除這筆分期？已經確認的支出會保留。')) removeInstall(b.dataset.id); }
+    else if (act === 'inst-confirm') confirmInstall(b.dataset.id, b.dataset.idx)
+    else if (act === 'inst-confirm-all') { pendingInst().forEach(x => confirmInstall(x.p.id, x.i, true)); update(); persist(); }
+    else if (act === 'ppl-open') { personOpen = b.dataset.id; renderAccounts(); scrollTo(0, 0); }
+    else if (act === 'ppl-back') { personOpen = null; renderAccounts(); }
+    else if (act === 'ppl-add') {
+      const n = prompt('新增往來對象（朋友、家人、公司…）：');
+      if (n !== null && n.trim()) { try { personOpen = addPerson(n); } catch (err) { alert(err.message); } }
+    }
+    else if (act === 'ppl-act') startDebt(b.dataset.id, b.dataset.kind);
+    else if (act === 'ppl-rename') {
+      const n = prompt('對象改名為：', personName(b.dataset.id));
+      if (n !== null) { try { renamePerson(b.dataset.id, n); } catch (err) { alert(err.message); } }
+    }
+    else if (act === 'ppl-del') {
+      if (confirm('刪除這個對象？')) { try { removePerson(b.dataset.id); } catch (err) { alert(err.message); } }
+    }
     else if (act === 'edit-cancel') endEdit();
     else if (act === 'catmgr-open') { catMgr = true; editing = false; update(); }
     else if (act === 'catmgr-close') { catMgr = false; update(); }
@@ -549,7 +907,7 @@ export function createLedger(root, options = {}) {
       e.preventDefault();
       if (!ready) return showError('資料載入中，請稍候。');
       try {
-        const input = { type, amount: f.amount.value, accountId: f.account.value, toAccountId: f.toAccount.value, category: f.category.value, date: f.date.value, time: f.time.value, note: f.note.value };
+        const input = { type: type === 'debt' ? f.debtKind.value : type, personId: f.person.value, amount: f.amount.value, accountId: f.account.value, toAccountId: f.toAccount.value, category: f.category.value, date: f.date.value, time: f.time.value, note: f.note.value };
         if (editId) { updateTransaction(editId, input); endEdit(); } else addTransaction(input);
         f.amount.value = ''; f.note.value = ''; f.time.value = nowTime(); showError(''); f.amount.focus();
       } catch (err) { showError(err.message); }
@@ -563,6 +921,18 @@ export function createLedger(root, options = {}) {
       try {
         saveAccount(f.dataset.id || null, { name: f.accname.value, kind: f.kind.value, opening: credit ? -Math.abs(n) : n, statementDay: f.statementDay.value, dueDay: f.dueDay.value, limit: f.limit.value });
       } catch (err) { f.querySelector('[data-acc-error]').textContent = err.message; }
+    } else if (f.matches('[data-form="loan"]')) {
+      e.preventDefault();
+      try { saveLoan(f.dataset.id || null, { name: f.lname.value, kind: f.lkind.value, rate: f.lrate.value, method: f.lmethod.value, payDay: f.lday.value, accountId: f.lacc.value, balance0: f.lbal?.value, months: f.lmonths?.value, grace: f.lgrace?.value, startDate: f.lstart?.value }); }
+      catch (err) { f.querySelector('[data-acc-error]').textContent = err.message; }
+    } else if (f.matches('[data-form="loanpay"]')) {
+      e.preventDefault();
+      try { payLoan(f.dataset.id, { date: f.pdate.value, accountId: f.pacc.value, interest: f.pint.value, principal: f.ppri.value, extra: f.dataset.mode === 'extra' }); }
+      catch (err) { f.querySelector('[data-acc-error]').textContent = err.message; }
+    } else if (f.matches('[data-form="inst"]')) {
+      e.preventDefault();
+      try { saveInstall(f.dataset.id || null, { name: f.iname.value, amount: f.iamt.value, periods: f.iper.value, firstDate: f.istart.value, accountId: f.iacc.value, category: f.icat.value, paid0: f.ipaid.value }); }
+      catch (err) { f.querySelector('[data-acc-error]').textContent = err.message; }
     } else if (f.matches('[data-form="catadd"]')) {
       e.preventDefault();
       try { addCategory(f.dataset.type, f.catname.value); } catch (err) { alert(err.message); }
@@ -570,7 +940,15 @@ export function createLedger(root, options = {}) {
   };
   const onType = e => {
     if (e.target.name === 'category' && e.target.value !== '__new__') lastCat = e.target.value;
+    if (e.target.matches('[data-pdue]')) { try { setPersonDue(e.target.dataset.pdue, e.target.value); } catch (err) { alert(err.message); } return; }
+    if (e.target.name === 'person' && e.target.value !== '__new__') lastPerson = e.target.value;
     if (e.target.name === 'type') { type = e.target.value; syncForm(); }
+    else if (e.target.name === 'debtKind') syncForm();
+    else if (e.target.name === 'person' && e.target.value === '__new__') {
+      const name = prompt('新增往來對象（最多 20 字）：');
+      if (name === null || !name.trim()) return fillPeople();
+      try { fillPeople(addPerson(name)); } catch (err) { alert(err.message); fillPeople(); }
+    }
     else if (e.target.name === 'category' && e.target.value === '__new__') {
       const name = prompt(`新增${type === 'income' ? '收入' : '支出'}分類（最多 12 字）：`);
       if (name === null || !name.trim()) return fillCats();
@@ -600,7 +978,7 @@ export function createLedger(root, options = {}) {
 
   return {
     getState: () => structuredClone(state),
-    addTransaction, updateTransaction, removeTransaction, saveAccount, removeAccount, replaceState, setBudget, setMonth, setMasked, addCategory, renameCategory, removeCategory, openCategoryManager,
+    addTransaction, updateTransaction, removeTransaction, saveAccount, removeAccount, addPerson, renamePerson, setPersonDue, removePerson, saveLoan, removeLoan, payLoan, saveInstall, removeInstall, confirmInstall, getDebt, replaceState, setBudget, setMonth, setMasked, addCategory, renameCategory, removeCategory, openCategoryManager,
     destroy() {
       root.removeEventListener('click', onClick);
       root.removeEventListener('submit', onSubmit);
