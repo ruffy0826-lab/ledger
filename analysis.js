@@ -10,10 +10,10 @@ const COLORS = ['#3e6ae1', '#4fd1a1', '#f5a524', '#ff5a5f', '#a78bfa', '#22d3ee'
 const BUCKETS = [['清晨', '05–09'], ['上午', '09–12'], ['中午', '12–14'], ['下午', '14–18'], ['晚上', '18–22'], ['深夜', '22–05']];
 const bucketOf = h => h < 5 ? 5 : h < 9 ? 0 : h < 12 ? 1 : h < 14 ? 2 : h < 18 ? 3 : h < 22 ? 4 : 5;
 
-export function mountAnalysis(el, getState, money, isHidden = () => false) {
+export function mountAnalysis(el, getState, money, isHidden = () => false, getDebt = () => null) {
   let n = 6;
   const draw = () => {
-    el.innerHTML = build(getState(), n, money, isHidden());
+    el.innerHTML = build(getState(), n, money, isHidden(), getDebt());
     el.querySelectorAll('[data-pct]').forEach(e => { e.style.width = e.dataset.pct + '%'; });
     el.querySelectorAll('[data-c]').forEach(e => { e.style.background = e.dataset.c; });
   };
@@ -21,7 +21,7 @@ export function mountAnalysis(el, getState, money, isHidden = () => false) {
   return draw;
 }
 
-function build(state, N, money, hid) {
+function build(state, N, money, hid, debt) {
   const cp = v => (hid ? '••' : compact(v));
   const now = new Date();
   const months = Array.from({ length: N }, (_, i) => { const d = new Date(now.getFullYear(), now.getMonth() - (N - 1 - i), 1); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; });
@@ -35,7 +35,14 @@ function build(state, N, money, hid) {
   const full = per.slice(0, -1), incF = r2(full.reduce((s, p) => s + p.inc, 0)), expF = r2(full.reduce((s, p) => s + p.exp, 0)), nF = full.length;   // 完整月份（不含本月）
   const rate = incF > 0 ? Math.round((incF - expF) / incF * 100) : null;
   const open = state.accounts.reduce((s, a) => s + (a.opening || 0), 0);
-  const nw = months.map(m => { let v = open; for (const t of state.transactions) if (t.date <= m + '-31') v += t.type === 'income' ? t.amount : t.type === 'expense' ? -t.amount : 0; return r2(v); });
+  // 淨資產＝帳戶初始餘額＋收入－支出，再扣掉貸款與分期的起算負債（分期每期確認的支出會把負債一起沖掉，所以加回）
+  const nw = months.map(m => {
+    const end = m + '-31'; let v = open;
+    for (const t of state.transactions) if (t.date <= end) v += t.type === 'income' ? t.amount : t.type === 'expense' ? -t.amount + (t.installId ? t.amount : 0) : 0;
+    for (const l of state.loans || []) if (l.startDate <= end) v -= l.balance0;
+    for (const p of state.installs || []) if (p.since <= end) v -= p.amount * (p.periods - p.paid0);
+    return r2(v);
+  });
   const catTotals = list => { const o = {}; list.forEach(t => { o[t.category] = r2((o[t.category] || 0) + t.amount); }); return Object.entries(o).sort((a, b) => b[1] - a[1]); };
   const cats = catTotals(RE);
   const cur = per[N - 1], prev = per[N - 2];
@@ -104,10 +111,23 @@ function build(state, N, money, hid) {
   const hbars = (items) => { const mx = Math.max(...items.map(i => i.v)); return items.map(i => `<div class="an-row${mx > 0 && i.v === mx ? ' is-max' : ''}"><span>${i.l}</span><div class="an-track"><i data-pct="${mx ? (i.v / mx * 100).toFixed(1) : 0}"></i></div><span class="an-amt">${money(r2(i.v))}</span></div>`).join(''); };
   const card = (title, body, extra = '') => `<section class="an-card"><div class="ledger__sec-head"><h3>${title}</h3>${extra}</div>${body}</section>`;
 
+  // 負債概況
+  let debtCard = '';
+  if (debt && (debt.loans.length || debt.installs.length)) {
+    const avgInc = nF ? r2(incF / nF) : 0, ratio = avgInc > 0 ? Math.round(debt.monthly / avgInc * 100) : null;
+    const lvl = ratio === null ? '' : ratio >= 50 ? 'is-up' : ratio >= 35 ? 'is-warn' : 'is-down';
+    const items = [...debt.loans.map(l => `<li><span>${esc(l.name)}</span><span class="an-amt">${money(l.remaining)}</span><span class="an-d">${l.payment ? '月付 ' + money(l.payment) : '已還清'}</span></li>`),
+      ...debt.installs.filter(p => p.left > 0).map(p => `<li><span>${esc(p.name)}</span><span class="an-amt">${money(p.remaining)}</span><span class="an-d">月付 ${money(p.amount)}</span></li>`)].join('');
+    const interest = r2(debt.loans.reduce((s, l) => s + l.totalInterest, 0));
+    debtCard = card('負債概況', `<div class="an-kpis"><div class="an-kpi"><small>負債總額</small><b>${money(debt.remaining)}</b></div><div class="an-kpi"><small>每月固定還款（估）</small><b>${money(debt.monthly)}</b></div>` +
+      `<div class="an-kpi"><small>月還款佔月收入</small><b class="${lvl}">${ratio === null ? '–' : ratio + '%'}</b></div><div class="an-kpi"><small>貸款預估剩餘利息</small><b>${money(interest)}</b></div></div>` +
+      (items ? `<ul class="an-list an-cmp">${items}</ul>` : '') + `<p class="an-note">${ratio === null ? '還沒有完整月份的收入記錄，暫時無法計算占比。' : `月收入以前 ${nF} 個完整月的平均計算。一般建議月還款不要超過月收入的 35%。`}</p>`);
+  }
+
   return head + `<div class="an-kpis">${kpis}</div><p class="an-note an-kpi-note">平均值與儲蓄率以完整月份計算（不含本月）。</p>` +
     (ins.length ? card('重點觀察', `<ul class="an-ins">${ins.map(s => `<li>${s}</li>`).join('')}</ul>`) : '') +
     card('收支趨勢', trend, '<span class="an-legend"><i class="d-inc"></i>收入<i class="d-exp"></i>支出</span>') +
-    card('淨資產走勢', networth) +
+    card('淨資產走勢', networth) + debtCard +
     card('支出分類佔比', donut) +
     card(`${+cur.m.slice(5)} 月 vs ${+prev.m.slice(5)} 月（同期）`, cmp) +
     card('消費時段', timed > 0 ? hbars(BUCKETS.map((b, i) => ({ l: b[0], v: tb[i] }))) + '<p class="an-note">只計算有記錄時間的支出。</p>' : '<p class="an-empty">還沒有帶時間的支出記錄。</p>') +
