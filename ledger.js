@@ -92,8 +92,10 @@ const SKELETON = `
         <label class="ledger__field" data-r="toWrap" hidden><span>轉入帳戶</span><select name="toAccount"></select></label>
         <label class="ledger__field" data-r="debtWrap" hidden><span>往來類型</span><select name="debtKind">${Object.entries(DEBT_OPT).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
         <label class="ledger__field" data-r="personWrap" hidden><span>對象</span><select name="person"></select></label>
+        <div class="ledger__catadd ledger__field--wide" data-r="personNew" hidden><input name="newperson" type="text" maxlength="20" placeholder="新對象名稱（家人、朋友…）" aria-label="新對象名稱" autocomplete="off"><button class="ledger__btn ledger__btn--primary" type="button" data-act="person-new-save">新增</button><button class="ledger__btn" type="button" data-act="person-new-cancel">取消</button></div>
         <p class="ledger__hint ledger__field--wide" data-r="debtHint" hidden></p>
         <label class="ledger__field" data-r="catWrap"><span>分類</span><select name="category"></select></label>
+        <div class="ledger__catadd ledger__field--wide" data-r="catNew" hidden><input name="newcat" type="text" maxlength="12" placeholder="新分類名稱" aria-label="新分類名稱" autocomplete="off"><button class="ledger__btn ledger__btn--primary" type="button" data-act="cat-new-save">新增</button><button class="ledger__btn" type="button" data-act="cat-new-cancel">取消</button></div>
         <label class="ledger__field"><span>日期</span><input name="date" type="date"></label>
         <label class="ledger__field"><span>時間</span><input name="time" type="time"></label>
         <label class="ledger__field ledger__field--wide"><span>備註</span><input name="note" type="text" maxlength="60" placeholder="例如：午餐"></label>
@@ -139,7 +141,7 @@ export function createLedger(root, options = {}) {
 
   let state = normalize(null, opt.categories);
   let month = today().slice(0, 7);
-  let type = 'expense', editing = false, ready = false, editId = null, accEdit = null, catMgr = false, lastCat = '', lastPerson = '', view = 'acc', personOpen = null, loanOpen = null, loanForm = null, payMode = null, instOpen = null, instForm = null;
+  let type = 'expense', editing = false, ready = false, editId = null, accEdit = null, catMgr = false, lastCat = '', lastPerson = '', view = 'acc', personOpen = null, loanOpen = null, loanForm = null, payMode = null, instOpen = null, instForm = null, pplForm = null;
 
   root.innerHTML = SKELETON;
   const $ = k => root.querySelector(`[data-r="${k}"]`);
@@ -737,7 +739,10 @@ export function createLedger(root, options = {}) {
       `<li class="ledger__accrow"><button type="button" class="ledger__acc" data-act="ppl-open" data-id="${esc(p.id)}"><span class="ledger__acc-name">${esc(p.name)}<small class="ledger__muted">${b > 0 ? '對方欠我' : b < 0 ? '我欠對方' : '已結清'}${p.dueDate && b ? ' · 預計 ' + p.dueDate.slice(5).replace('-', '/') : ''}</small></span><span class="ledger__num${b > 0 ? ' is-income' : ''}">${money(Math.abs(b))}</span></button></li>`).join('')}</ul>`
       : '<p class="ledger__empty">還沒有往來對象。在「記帳」選「往來」記第一筆，或按右上角新增對象。</p>';
     return `<dl class="ledger__sum ledger__sum--two"><div><dt>應收（別人欠我）</dt><dd class="${recv ? 'is-pos' : ''}">${money(recv)}</dd></div><div><dt>應付（我欠別人）</dt><dd>${money(owe)}</dd></div></dl>` +
-      `<div class="ledger__sec-head"><h3>往來對象</h3><button class="ledger__link" type="button" data-act="ppl-add">新增對象</button></div>${list}`;
+      `<div class="ledger__sec-head"><h3>往來對象</h3><button class="ledger__link" type="button" data-act="ppl-add">新增對象</button></div>${pplForm === 'new' ? pplFormHtml('', '') : ''}${list}`;
+  }
+  function pplFormHtml(id, name) {
+    return `<form class="ledger__catadd" data-form="person" data-id="${esc(id)}" novalidate><input name="pname" type="text" maxlength="20" value="${esc(name)}" placeholder="對象名稱（家人、朋友、公司…）" aria-label="對象名稱" autocomplete="off"><button class="ledger__btn ledger__btn--primary" type="submit">${id ? '儲存' : '新增'}</button><button class="ledger__btn" type="button" data-act="ppl-formcancel">取消</button></form><p class="ledger__error" data-ppl-error role="alert"></p>`;
   }
   function personDetail(p) {
     const b = personBal(p.id), tx = state.transactions.filter(t => t.personId === p.id).sort((x, y) => y.date.localeCompare(x.date) || (y.time || '').localeCompare(x.time || '') || (y.createdAt || 0) - (x.createdAt || 0));
@@ -745,7 +750,7 @@ export function createLedger(root, options = {}) {
     const btn = (kind, label, primary) => `<button type="button" class="ledger__btn${primary ? ' ledger__btn--primary' : ''}" data-act="ppl-act" data-kind="${kind}" data-id="${esc(p.id)}">${label}</button>`;
     return `<div class="ledger__sec-head"><button class="ledger__link" type="button" data-act="ppl-back">‹ 往來</button><span class="ledger__links"><button class="ledger__link" type="button" data-act="ppl-rename" data-id="${esc(p.id)}">改名</button>` +
       `<button class="ledger__link ledger__link--danger" type="button" data-act="ppl-del" data-id="${esc(p.id)}">刪除</button></span></div>` +
-      `<div class="ledger__person"><h3>${esc(p.name)}</h3><p class="ledger__status">${status}</p>` +
+      `${pplForm === p.id ? pplFormHtml(p.id, p.name) : ''}<div class="ledger__person"><h3>${esc(p.name)}</h3><p class="ledger__status">${status}</p>` +
       `<div class="ledger__actions">${b > 0 ? btn('collect', '收回', true) : b < 0 ? btn('payback', '還款', true) : ''}${btn(b < 0 ? 'borrow' : 'lend', b < 0 ? '再借入' : '再借出', b === 0)}${btn('advance', '代墊')}</div>` +
       `<label class="ledger__field"><span>預計${b < 0 ? '還款' : '收回'}日（選填，到期前 3 天提醒）</span><input type="date" data-pdue="${esc(p.id)}" value="${esc(p.dueDate || '')}"></label></div>` +
       `<div class="ledger__sec-head"><h3>往來記錄</h3><small class="ledger__muted">${tx.length} 筆</small></div>` +
@@ -777,14 +782,18 @@ export function createLedger(root, options = {}) {
     const f = $('form'), tr = type === 'transfer', db = type === 'debt', cat = type === 'expense' || type === 'income';
     $('catWrap').hidden = !cat; $('toWrap').hidden = !tr;
     $('debtWrap').hidden = !db; $('personWrap').hidden = !db; $('debtHint').hidden = !db;
+    $('personNew').hidden = true; $('catNew').hidden = true;
     $('accLabel').textContent = tr ? '轉出帳戶' : db ? (INFLOW.has(f.debtKind.value) ? '入帳帳戶' : '付款帳戶') : '帳戶';
     if (db) { fillPeople(); $('debtHint').textContent = DEBT_HINT[f.debtKind.value]; }
     if (cat) fillCats();
   }
   function fillPeople(sel) {
     const f = $('form'), old = sel ?? (f.person.value === '__new__' ? lastPerson : f.person.value);
-    f.person.innerHTML = state.people.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('') + '<option value="__new__">＋ 新增對象…</option>';
-    if (state.people.some(p => p.id === old)) f.person.value = old;
+    // 沒有任何對象時，選單只剩「＋ 新增對象…」，選它不會觸發 change，所以加一個空白選項，並直接打開輸入欄
+    const none = !state.people.length;
+    f.person.innerHTML = (none ? '<option value="" disabled>請先新增對象</option>' : '') + state.people.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('') + '<option value="__new__">＋ 新增對象…</option>';
+    if (none) { f.person.value = ''; $('personNew').hidden = false; }
+    else if (state.people.some(p => p.id === old)) f.person.value = old;
     lastPerson = f.person.value;
   }
   function fillCats(sel) {
@@ -861,7 +870,7 @@ export function createLedger(root, options = {}) {
     } else if (act === 'budget-edit' || act === 'budget-cancel') {
       editing = act === 'budget-edit'; update();
     } else if (act === 'edit') { if (state.transactions.find(t => t.id === b.dataset.id)?.type === 'loanprin') return alert('貸款本金記錄無法修改。請刪除後，到「資產 › 貸款」重新記錄。'); startEdit(b.dataset.id); if (b.closest('[data-r="accounts"]')) root.dispatchEvent(new CustomEvent('ledger:goto', { detail: 'records' })); }
-    else if (act === 'view') { view = b.dataset.v; personOpen = loanOpen = instOpen = loanForm = instForm = payMode = null; renderAccounts(); }
+    else if (act === 'view') { view = b.dataset.v; pplForm = null; personOpen = loanOpen = instOpen = loanForm = instForm = payMode = null; renderAccounts(); }
     else if (act === 'loan-new') { loanForm = 'new'; renderAccounts(); }
     else if (act === 'loan-open') { loanOpen = b.dataset.id; payMode = null; renderAccounts(); scrollTo(0, 0); }
     else if (act === 'loan-back') { loanOpen = null; loanForm = null; payMode = null; renderAccounts(); }
@@ -878,17 +887,16 @@ export function createLedger(root, options = {}) {
     else if (act === 'inst-del') { if (confirm('刪除這筆分期？已經確認的支出會保留。')) removeInstall(b.dataset.id); }
     else if (act === 'inst-confirm') confirmInstall(b.dataset.id, b.dataset.idx)
     else if (act === 'inst-confirm-all') { pendingInst().forEach(x => confirmInstall(x.p.id, x.i, true)); update(); persist(); }
-    else if (act === 'ppl-open') { personOpen = b.dataset.id; renderAccounts(); scrollTo(0, 0); }
-    else if (act === 'ppl-back') { personOpen = null; renderAccounts(); }
-    else if (act === 'ppl-add') {
-      const n = prompt('新增往來對象（朋友、家人、公司…）：');
-      if (n !== null && n.trim()) { try { personOpen = addPerson(n); } catch (err) { alert(err.message); } }
-    }
+    else if (act === 'ppl-open') { personOpen = b.dataset.id; pplForm = null; renderAccounts(); scrollTo(0, 0); }
+    else if (act === 'ppl-back') { personOpen = null; pplForm = null; renderAccounts(); }
+    else if (act === 'ppl-add') { pplForm = 'new'; renderAccounts(); focusIn('[data-form="person"] input'); }
+    else if (act === 'ppl-formcancel') { pplForm = null; renderAccounts(); }
+    else if (act === 'person-new-save') savePersonInline();
+    else if (act === 'person-new-cancel') { $('personNew').hidden = true; fillPeople(); }
+    else if (act === 'cat-new-save') saveCatInline();
+    else if (act === 'cat-new-cancel') { $('catNew').hidden = true; fillCats(); }
     else if (act === 'ppl-act') startDebt(b.dataset.id, b.dataset.kind);
-    else if (act === 'ppl-rename') {
-      const n = prompt('對象改名為：', personName(b.dataset.id));
-      if (n !== null) { try { renamePerson(b.dataset.id, n); } catch (err) { alert(err.message); } }
-    }
+    else if (act === 'ppl-rename') { pplForm = b.dataset.id; renderAccounts(); focusIn('[data-form="person"] input'); }
     else if (act === 'ppl-del') {
       if (confirm('刪除這個對象？')) { try { removePerson(b.dataset.id); } catch (err) { alert(err.message); } }
     }
@@ -909,10 +917,23 @@ export function createLedger(root, options = {}) {
       if (confirm('刪除這個帳戶？')) { try { removeAccount(b.dataset.id); } catch (err) { alert(err.message); } }
     }
   };
+  function focusIn(sel) { const el = root.querySelector(sel); if (el) { el.focus(); el.select?.(); } }
+  function savePersonInline() {
+    const f = $('form'), n = f.newperson.value;
+    if (!n.trim()) return f.newperson.focus();
+    try { const id = addPerson(n); fillPeople(id); $('personNew').hidden = true; showError(''); } catch (err) { showError(err.message); }
+  }
+  function saveCatInline() {
+    const f = $('form'), n = f.newcat.value;
+    if (!n.trim()) return f.newcat.focus();
+    try { const c = addCategory(type, n); fillCats(c); $('catNew').hidden = true; showError(''); } catch (err) { showError(err.message); }
+  }
   const onSubmit = e => {
     const f = e.target;
     if (f.matches('[data-form="entry"]')) {
       e.preventDefault();
+      if (document.activeElement === f.newperson) return savePersonInline();
+      if (document.activeElement === f.newcat) return saveCatInline();
       if (!ready) return showError('資料載入中，請稍候。');
       try {
         const input = { type: type === 'debt' ? f.debtKind.value : type, personId: f.person.value, amount: f.amount.value, accountId: f.account.value, toAccountId: f.toAccount.value, category: f.category.value, date: f.date.value, time: f.time.value, note: f.note.value };
@@ -941,6 +962,13 @@ export function createLedger(root, options = {}) {
       e.preventDefault();
       try { saveInstall(f.dataset.id || null, { name: f.iname.value, amount: f.iamt.value, periods: f.iper.value, firstDate: f.istart.value, accountId: f.iacc.value, category: f.icat.value, paid0: f.ipaid.value }); }
       catch (err) { f.querySelector('[data-acc-error]').textContent = err.message; }
+    } else if (f.matches('[data-form="person"]')) {
+      e.preventDefault();
+      const id = f.dataset.id, n = f.pname.value;
+      try {
+        if (id) { pplForm = null; renamePerson(id, n); }
+        else { const nid = addPerson(n); pplForm = null; personOpen = nid; renderAccounts(); scrollTo(0, 0); }
+      } catch (err) { f.parentNode.querySelector('[data-ppl-error]').textContent = err.message; if (id) pplForm = id; }
     } else if (f.matches('[data-form="catadd"]')) {
       e.preventDefault();
       try { addCategory(f.dataset.type, f.catname.value); } catch (err) { alert(err.message); }
@@ -953,14 +981,10 @@ export function createLedger(root, options = {}) {
     if (e.target.name === 'type') { type = e.target.value; syncForm(); }
     else if (e.target.name === 'debtKind') syncForm();
     else if (e.target.name === 'person' && e.target.value === '__new__') {
-      const name = prompt('新增往來對象（最多 20 字）：');
-      if (name === null || !name.trim()) return fillPeople();
-      try { fillPeople(addPerson(name)); } catch (err) { alert(err.message); fillPeople(); }
+      $('personNew').hidden = false; $('form').newperson.value = ''; $('form').newperson.focus();
     }
     else if (e.target.name === 'category' && e.target.value === '__new__') {
-      const name = prompt(`新增${type === 'income' ? '收入' : '支出'}分類（最多 12 字）：`);
-      if (name === null || !name.trim()) return fillCats();
-      try { fillCats(addCategory(type, name)); } catch (err) { alert(err.message); fillCats(); }
+      $('catNew').hidden = false; $('form').newcat.value = ''; $('form').newcat.focus();
     }
     else if (e.target.name === 'kind') {
       const f = e.target.form, c = e.target.value === 'credit';
