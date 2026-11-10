@@ -6,7 +6,8 @@ const compact = n => {
   const a = Math.abs(n), s = a >= 1e8 ? (a / 1e8).toFixed(1) + '億' : a >= 1e4 ? (a / 1e4).toFixed(1).replace(/\.0$/, '') + '萬' : String(Math.round(a));
   return (n < 0 ? '-' : '') + s;
 };
-const COLORS = ['#3e6ae1', '#4fd1a1', '#f5a524', '#ff5a5f', '#a78bfa', '#22d3ee', '#8a8d91'];
+// 甜甜圈的顏色跟著主題走（定義在 app.css 的 --c1～--c7）
+const COLORS = [1, 2, 3, 4, 5, 6, 7].map(i => `var(--c${i})`);
 const BUCKETS = [['清晨', '05–09'], ['上午', '09–12'], ['中午', '12–14'], ['下午', '14–18'], ['晚上', '18–22'], ['深夜', '22–05']];
 const bucketOf = h => h < 5 ? 5 : h < 9 ? 0 : h < 12 ? 1 : h < 14 ? 2 : h < 18 ? 3 : h < 22 ? 4 : 5;
 
@@ -93,7 +94,7 @@ function build(state, N, money, hid, debt) {
   if (exp > 0) {
     const top = cats.slice(0, 6), rest = r2(cats.slice(6).reduce((s, c) => s + c[1], 0)), slices = rest > 0 ? [...top, ['其他', rest]] : top;
     let off = 0;
-    const arcs = slices.map(([, v], i) => { const p = v / exp * 100, c = `<circle r="15.9155" cx="21" cy="21" fill="none" stroke="${COLORS[i]}" stroke-width="6" stroke-dasharray="${p.toFixed(2)} ${(100 - p).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 21 21)"/>`; off += p; return c; }).join('');
+    const arcs = slices.map(([, v], i) => { const p = v / exp * 100, c = `<circle r="15.9155" cx="21" cy="21" fill="none" style="stroke:${COLORS[i]}" stroke-width="6" stroke-dasharray="${p.toFixed(2)} ${(100 - p).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 21 21)"/>`; off += p; return c; }).join('');
     donut = `<svg class="an-donut" viewBox="0 0 42 42" role="img" aria-label="支出分類佔比">${arcs}<text class="an-dn" x="21" y="22.2" text-anchor="middle">${cp(exp)}</text><text class="an-dn-sub" x="21" y="26.5" text-anchor="middle">總支出</text></svg>` +
       `<ul class="an-list">${slices.map(([nm, v], i) => `<li><i data-c="${COLORS[i]}"></i><span>${esc(nm)}</span><b>${Math.round(v / exp * 100)}%</b><span class="an-amt">${money(v)}</span></li>`).join('')}</ul>`;
   }

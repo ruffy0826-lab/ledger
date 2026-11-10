@@ -173,5 +173,37 @@ const onLeave = () => { if (prefs.hideOnLeave && !hidden) setHidden(true); };
 document.addEventListener('visibilitychange', () => { if (document.hidden) onLeave(); });
 addEventListener('pagehide', onLeave);
 
+// ---------- 外觀主題 ----------
+// 新增主題：在 app.css 加一段 [data-theme="id"]，再在這裡加一行 [id, 名稱, [背景, 卡片, 主色]]
+const THEMES = [
+  ['dark', '經典黑', ['#0a0a0a', '#232323', '#3e6ae1']],
+  ['sakura', '櫻花粉', ['#fff4f7', '#fde3ec', '#e8508a']],
+  ['peach', '蜜桃牛奶', ['#fff6f1', '#ffe6dc', '#f2788f']],
+  ['night-sakura', '夜櫻', ['#170d12', '#33202a', '#ff7eaa']],
+  ['lavender', '薰衣草', ['#f7f4ff', '#ebe4ff', '#8b6cf0']],
+  ['mint', '薄荷', ['#f2fbf8', '#dcf3ec', '#22a785']],
+];
+const THEME_KEY = 'ledger:theme', look = { theme: 'dark', accent: '', hearts: false };
+try { Object.assign(look, JSON.parse(localStorage.getItem(THEME_KEY))); } catch {}
+const root = document.documentElement;
+function applyLook() {
+  root.dataset.theme = look.theme;
+  if (look.accent) root.style.setProperty('--blue', look.accent); else root.style.removeProperty('--blue');
+  document.body.classList.toggle('is-hearts', look.hearts);
+  const cs = getComputedStyle(root);
+  document.querySelector('meta[name="theme-color"]').content = cs.getPropertyValue('--bg').trim();
+  $('#accent').value = look.accent || cs.getPropertyValue('--blue').trim();
+  $('#themes').querySelectorAll('.theme').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.theme === look.theme)));
+  $('#hearts').checked = look.hearts;
+  try { localStorage.setItem(THEME_KEY, JSON.stringify(look)); } catch {}
+}
+$('#themes').innerHTML = THEMES.map(([id, name, [a, b, c]]) =>
+  `<button class="theme" type="button" data-theme="${id}"><i aria-hidden="true"><b style="background:${a}"></b><b style="background:${b}"></b><b style="background:${c}"></b></i>${name}</button>`).join('');
+$('#themes').onclick = e => { const b = e.target.closest('.theme'); if (b) { look.theme = b.dataset.theme; look.accent = ''; applyLook(); } };
+$('#accent').oninput = e => { look.accent = e.target.value; applyLook(); };
+$('#accent-reset').onclick = () => { look.accent = ''; applyLook(); };
+$('#hearts').onchange = e => { look.hearts = e.target.checked; applyLook(); };
+applyLook();
+
 // ---------- 離線 ----------
 if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js'));
