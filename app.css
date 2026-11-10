@@ -274,13 +274,25 @@ body[data-tab="analysis"] #analysis { display: block; }
 :root:is([data-theme="sakura"], [data-theme="peach"], [data-theme="night-sakura"], [data-theme="lavender"], [data-theme="mint"]) .ledger__bar.is-peak { fill: var(--blue); }
 :root:is([data-theme="sakura"], [data-theme="peach"], [data-theme="lavender"], [data-theme="mint"]) :is(.group, .an-card, .an-kpi, .ledger__form, [data-r="list"], [data-r="cats"], [data-r="daily"], .ledger__acclist, .ledger__person, .ledger__acc-form) { box-shadow: 0 1px 2px rgba(120,40,70,.04), 0 6px 20px rgba(120,40,70,.06); }
 
-/* 愛心點綴：背景淡淡的小愛心 */
-body.is-hearts {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cg fill='%23ff6f9f' fill-opacity='.11'%3E%3Cpath d='M20 30c-4-6-14-4-12 4 1 5 12 11 12 11s11-6 12-11c2-8-8-10-12-4z'/%3E%3Cpath transform='translate(70 66) scale(.7)' d='M20 30c-4-6-14-4-12 4 1 5 12 11 12 11s11-6 12-11c2-8-8-10-12-4z'/%3E%3Ccircle cx='95' cy='22' r='2'/%3E%3Ccircle cx='38' cy='98' r='1.6'/%3E%3C/g%3E%3C/svg%3E");
-  background-attachment: fixed;
+/* 點綴：愛心、星星可以單獨開，也可以一起開 */
+:root {
+  --deco-hearts: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cg fill='%23ff6f9f' fill-opacity='.11'%3E%3Cpath d='M20 30c-4-6-14-4-12 4 1 5 12 11 12 11s11-6 12-11c2-8-8-10-12-4z'/%3E%3Cpath transform='translate(70 66) scale(.7)' d='M20 30c-4-6-14-4-12 4 1 5 12 11 12 11s11-6 12-11c2-8-8-10-12-4z'/%3E%3Ccircle cx='95' cy='22' r='2'/%3E%3Ccircle cx='38' cy='98' r='1.6'/%3E%3C/g%3E%3C/svg%3E");
+  --deco-stars: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='150'%3E%3Cg fill='%23ffbf3c' fill-opacity='.22'%3E%3Cpath transform='translate(104 8)' d='M12 0l3.5 7.6 8.3.9-6.2 5.6 1.8 8.2L12 18.1 4.6 22.3l1.8-8.2L.2 8.5l8.3-.9z'/%3E%3Cpath transform='translate(20 92) scale(.6)' d='M12 0l3.5 7.6 8.3.9-6.2 5.6 1.8 8.2L12 18.1 4.6 22.3l1.8-8.2L.2 8.5l8.3-.9z'/%3E%3Cpath transform='translate(52 40)' d='M7 0c.6 4.4 2.6 6.4 7 7-4.4.6-6.4 2.6-7 7-.6-4.4-2.6-6.4-7-7 4.4-.6 6.4-2.6 7-7z'/%3E%3Cpath transform='translate(118 112) scale(.7)' d='M7 0c.6 4.4 2.6 6.4 7 7-4.4.6-6.4 2.6-7 7-.6-4.4-2.6-6.4-7-7 4.4-.6 6.4-2.6 7-7z'/%3E%3Ccircle cx='12' cy='22' r='1.6'/%3E%3Ccircle cx='86' cy='132' r='1.4'/%3E%3C/g%3E%3C/svg%3E");
 }
-body.is-hearts .ledger__bal dt::after { content: " ♡"; color: var(--blue); }
-body.is-hearts .tabbar button[aria-current="true"] { color: var(--blue); }
+:root:is(:not([data-theme]), [data-theme="dark"], [data-theme="night-sakura"]) {
+  --deco-stars: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='150'%3E%3Cg fill='%23fff3c4' fill-opacity='.30'%3E%3Cpath transform='translate(104 8)' d='M12 0l3.5 7.6 8.3.9-6.2 5.6 1.8 8.2L12 18.1 4.6 22.3l1.8-8.2L.2 8.5l8.3-.9z'/%3E%3Cpath transform='translate(20 92) scale(.6)' d='M12 0l3.5 7.6 8.3.9-6.2 5.6 1.8 8.2L12 18.1 4.6 22.3l1.8-8.2L.2 8.5l8.3-.9z'/%3E%3Cpath transform='translate(52 40)' d='M7 0c.6 4.4 2.6 6.4 7 7-4.4.6-6.4 2.6-7 7-.6-4.4-2.6-6.4-7-7 4.4-.6 6.4-2.6 7-7z'/%3E%3Cpath transform='translate(118 112) scale(.7)' d='M7 0c.6 4.4 2.6 6.4 7 7-4.4.6-6.4 2.6-7 7-.6-4.4-2.6-6.4-7-7 4.4-.6 6.4-2.6 7-7z'/%3E%3Ccircle cx='12' cy='22' r='1.6'/%3E%3Ccircle cx='86' cy='132' r='1.4'/%3E%3C/g%3E%3C/svg%3E");
+}
+/* Y2K 星星：鉻銀金屬四芒星＋鐳射光芒 */
+:root { --deco-y2k: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E %3Cdefs%3E%3ClinearGradient id='c' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffffff'/%3E%3Cstop offset='.42' stop-color='%23c3cad4'/%3E%3Cstop offset='.5' stop-color='%235d6673'/%3E%3Cstop offset='.62' stop-color='%23e9edf2'/%3E%3Cstop offset='1' stop-color='%238b95a3'/%3E%3C/linearGradient%3E %3ClinearGradient id='h' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ff9ad5'/%3E%3Cstop offset='.5' stop-color='%23b9a4ff'/%3E%3Cstop offset='1' stop-color='%237fe0ff'/%3E%3C/linearGradient%3E%3C/defs%3E %3Cg opacity='.55'%3E %3Cpath transform='translate(40 46) scale(.9 1.6)' fill='url(%23c)' d='M0-20C.8-3 3-.8 20 0 3 .8 .8 3 0 20-.8 3-3 .8-20 0-3-.8-.8-3 0-20z'/%3E %3Cpath transform='translate(40 46)' stroke='url(%23c)' stroke-width='.8' d='M-30 0H30M0-44V44'/%3E %3Cpath transform='translate(136 128) scale(.55 1)' fill='url(%23c)' d='M0-20C.8-3 3-.8 20 0 3 .8 .8 3 0 20-.8 3-3 .8-20 0-3-.8-.8-3 0-20z'/%3E %3Cpath transform='translate(132 36) scale(.5)' fill='none' stroke='url(%23h)' stroke-width='2' d='M0-20C.8-3 3-.8 20 0 3 .8 .8 3 0 20-.8 3-3 .8-20 0-3-.8-.8-3 0-20z'/%3E %3Cpath transform='translate(78 140) scale(.35 .6)' fill='url(%23h)' d='M0-20C.8-3 3-.8 20 0 3 .8 .8 3 0 20-.8 3-3 .8-20 0-3-.8-.8-3 0-20z'/%3E %3Cpath transform='translate(96 86) scale(.28)' fill='url(%23c)' d='M0-20C.8-3 3-.8 20 0 3 .8 .8 3 0 20-.8 3-3 .8-20 0-3-.8-.8-3 0-20z'/%3E %3Ccircle cx='160' cy='78' r='1.8' fill='%23ffffff'/%3E%3Ccircle cx='14' cy='112' r='1.4' fill='%23c3cad4'/%3E%3Ccircle cx='112' cy='170' r='1.4' fill='%23ffffff'/%3E %3C/g%3E%3C/svg%3E"); }
+/* 三種點綴可以任意組合：每種各佔一層背景 */
+body { background-image: var(--ly2k, none), var(--lstars, none), var(--lhearts, none); background-attachment: fixed; }
+body.is-hearts { --lhearts: var(--deco-hearts); }
+body.is-stars { --lstars: var(--deco-stars); }
+body.is-y2k { --ly2k: var(--deco-y2k); }
+body:is(.is-hearts, .is-stars, .is-y2k) .ledger__bal dt::after { content: var(--mark); color: var(--blue); letter-spacing: .1em; }
+body:is(.is-hearts, .is-stars, .is-y2k) .tabbar button[aria-current="true"] { color: var(--blue); }
+/* Y2K：結餘數字變成鉻銀金屬字 */
+body.is-y2k .ledger__bal dd:not(.is-neg) { background: linear-gradient(180deg, #ffffff 0%, #d5dae1 44%, #6b7480 52%, #eef1f4 64%, #a3acb8 100%); filter: drop-shadow(0 0 6px rgba(185,164,255,.35)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 
 /* 設定頁：主題選擇 */
 .group > .themes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 16px; }
@@ -294,3 +306,4 @@ body.is-hearts .tabbar button[aria-current="true"] { color: var(--blue); }
 .row-color input::-webkit-color-swatch { border: 0; border-radius: 8px; }
 .group > * { box-sizing: border-box; }
 :root:is([data-theme="sakura"], [data-theme="peach"], [data-theme="night-sakura"], [data-theme="lavender"], [data-theme="mint"]) .row-switch input:checked { background: var(--blue); }
+:root:is([data-theme="sakura"], [data-theme="peach"], [data-theme="lavender"], [data-theme="mint"]) body.is-y2k .ledger__bal dd:not(.is-neg) { background-image: linear-gradient(180deg, #8a93a0 0%, #3b424c 46%, #14171c 52%, #5d6673 66%, #2a2f36 100%); filter: none; }

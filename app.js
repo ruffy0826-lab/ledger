@@ -183,18 +183,23 @@ const THEMES = [
   ['lavender', '薰衣草', ['#f7f4ff', '#ebe4ff', '#8b6cf0']],
   ['mint', '薄荷', ['#f2fbf8', '#dcf3ec', '#22a785']],
 ];
-const THEME_KEY = 'ledger:theme', look = { theme: 'dark', accent: '', hearts: false };
+const THEME_KEY = 'ledger:theme', look = { theme: 'dark', accent: '', hearts: false, stars: false, y2k: false };
 try { Object.assign(look, JSON.parse(localStorage.getItem(THEME_KEY))); } catch {}
 const root = document.documentElement;
 function applyLook() {
   root.dataset.theme = look.theme;
   if (look.accent) root.style.setProperty('--blue', look.accent); else root.style.removeProperty('--blue');
   document.body.classList.toggle('is-hearts', look.hearts);
+  document.body.classList.toggle('is-stars', look.stars);
+  document.body.classList.toggle('is-y2k', look.y2k);
+  root.style.setProperty('--mark', JSON.stringify(' ' + (look.hearts ? '♡' : '') + (look.stars ? '☆' : '') + (look.y2k ? '✧' : '')));
   const cs = getComputedStyle(root);
   document.querySelector('meta[name="theme-color"]').content = cs.getPropertyValue('--bg').trim();
   $('#accent').value = look.accent || cs.getPropertyValue('--blue').trim();
   $('#themes').querySelectorAll('.theme').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.theme === look.theme)));
   $('#hearts').checked = look.hearts;
+  $('#stars').checked = look.stars;
+  $('#y2k').checked = look.y2k;
   try { localStorage.setItem(THEME_KEY, JSON.stringify(look)); } catch {}
 }
 $('#themes').innerHTML = THEMES.map(([id, name, [a, b, c]]) =>
@@ -203,6 +208,8 @@ $('#themes').onclick = e => { const b = e.target.closest('.theme'); if (b) { loo
 $('#accent').oninput = e => { look.accent = e.target.value; applyLook(); };
 $('#accent-reset').onclick = () => { look.accent = ''; applyLook(); };
 $('#hearts').onchange = e => { look.hearts = e.target.checked; applyLook(); };
+$('#stars').onchange = e => { look.stars = e.target.checked; applyLook(); };
+$('#y2k').onchange = e => { look.y2k = e.target.checked; applyLook(); };
 applyLook();
 
 // ---------- 離線 ----------
