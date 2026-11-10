@@ -192,7 +192,7 @@ function applyLook() {
   document.body.classList.toggle('is-hearts', look.hearts);
   document.body.classList.toggle('is-stars', look.stars);
   document.body.classList.toggle('is-y2k', look.y2k);
-  root.style.setProperty('--mark', JSON.stringify(' ' + (look.hearts ? '♡' : '') + (look.stars ? '☆' : '') + (look.y2k ? '✧' : '')));
+  root.style.setProperty('--mark', JSON.stringify(' ' + (look.hearts ? '♡' : '') + (look.stars ? '☆' : '') + (look.y2k ? '★' : '')));
   const cs = getComputedStyle(root);
   document.querySelector('meta[name="theme-color"]').content = cs.getPropertyValue('--bg').trim();
   $('#accent').value = look.accent || cs.getPropertyValue('--blue').trim();
