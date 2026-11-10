@@ -14,7 +14,7 @@
   <link rel="icon" href="icons/icon-192.png">
   <script>
     // 在畫面出現前套用主題，避免開啟時先閃一下黑色
-    try { const t = JSON.parse(localStorage.getItem('ledger:theme')) || {}; if (t.theme) document.documentElement.dataset.theme = t.theme; if (t.accent) document.documentElement.style.setProperty('--blue', t.accent); } catch {}
+    try { const t = JSON.parse(localStorage.getItem('ledger:theme')) || {}; if (['sakura','peach','night-sakura','crimson','chrome'].includes(t.theme)) document.documentElement.dataset.theme = t.theme; if (t.accent) document.documentElement.style.setProperty('--blue', t.accent); } catch {}
   </script>
   <link rel="stylesheet" href="ledger.css">
   <link rel="stylesheet" href="app.css">
@@ -52,7 +52,8 @@
     <h2 class="gt">外觀</h2>
     <div class="group">
       <div class="themes" id="themes" role="group" aria-label="主題"></div>
-      <label class="row-color"><span>自訂主色</span><input id="accent" type="color"></label>
+      <div class="accents-title">主色</div>
+      <div class="accents" id="accents" role="group" aria-label="主色"></div>
       <button class="row-btn" id="accent-reset" type="button">主色恢復成主題預設</button>
       <label class="row-switch"><span>愛心點綴</span><input id="hearts" type="checkbox" role="switch"></label>
       <label class="row-switch"><span>星星點綴</span><input id="stars" type="checkbox" role="switch"></label>

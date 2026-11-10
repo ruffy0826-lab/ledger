@@ -180,11 +180,14 @@ const THEMES = [
   ['sakura', '櫻花粉', ['#fff4f7', '#fde3ec', '#e8508a']],
   ['peach', '蜜桃牛奶', ['#fff6f1', '#ffe6dc', '#f2788f']],
   ['night-sakura', '夜櫻', ['#170d12', '#33202a', '#ff7eaa']],
-  ['lavender', '薰衣草', ['#f7f4ff', '#ebe4ff', '#8b6cf0']],
-  ['mint', '薄荷', ['#f2fbf8', '#dcf3ec', '#22a785']],
+  ['crimson', '暗夜紅', ['#110809', '#2c171a', '#e5383b']],
+  ['chrome', '鉻銀', ['#0c0d0f', '#262a30', '#d3d8df']],
 ];
 const THEME_KEY = 'ledger:theme', look = { theme: 'dark', accent: '', hearts: false, stars: false, y2k: false };
 try { Object.assign(look, JSON.parse(localStorage.getItem(THEME_KEY))); } catch {}
+if (!THEMES.some(t => t[0] === look.theme)) look.theme = 'dark';   // 拿掉的舊主題自動回到經典黑
+// 主色：直接點色塊（iPhone 主畫面 App 裡的系統調色盤常常叫不出來）
+const ACCENTS = ['#e5383b', '#ff6b81', '#e8508a', '#ff7eaa', '#f2788f', '#f5a524', '#ffd23f', '#a4161a', '#3e6ae1', '#5ac8fa', '#8b95a3', '#d3d8df', '#ffffff'];
 const root = document.documentElement;
 function applyLook() {
   root.dataset.theme = look.theme;
@@ -195,7 +198,8 @@ function applyLook() {
   root.style.setProperty('--mark', JSON.stringify(' ' + (look.hearts ? '♡' : '') + (look.stars ? '☆' : '') + (look.y2k ? '★' : '')));
   const cs = getComputedStyle(root);
   document.querySelector('meta[name="theme-color"]').content = cs.getPropertyValue('--bg').trim();
-  $('#accent').value = look.accent || cs.getPropertyValue('--blue').trim();
+  const cur = (look.accent || cs.getPropertyValue('--blue').trim()).toLowerCase();
+  $('#accents').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.c === cur)));
   $('#themes').querySelectorAll('.theme').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.theme === look.theme)));
   $('#hearts').checked = look.hearts;
   $('#stars').checked = look.stars;
@@ -205,7 +209,8 @@ function applyLook() {
 $('#themes').innerHTML = THEMES.map(([id, name, [a, b, c]]) =>
   `<button class="theme" type="button" data-theme="${id}"><i aria-hidden="true"><b style="background:${a}"></b><b style="background:${b}"></b><b style="background:${c}"></b></i>${name}</button>`).join('');
 $('#themes').onclick = e => { const b = e.target.closest('.theme'); if (b) { look.theme = b.dataset.theme; look.accent = ''; applyLook(); } };
-$('#accent').oninput = e => { look.accent = e.target.value; applyLook(); };
+$('#accents').innerHTML = ACCENTS.map(c => `<button type="button" data-c="${c}" style="background:${c}" aria-label="主色 ${c}"></button>`).join('');
+$('#accents').onclick = e => { const b = e.target.closest('button'); if (b) { look.accent = b.dataset.c; applyLook(); } };
 $('#accent-reset').onclick = () => { look.accent = ''; applyLook(); };
 $('#hearts').onchange = e => { look.hearts = e.target.checked; applyLook(); };
 $('#stars').onchange = e => { look.stars = e.target.checked; applyLook(); };
