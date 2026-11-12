@@ -70,13 +70,21 @@ const dueAfter = (dueDay, stmt) => { const d = clampDay(stmt.getFullYear(), stmt
 // ---------- 回饋：觸感＋「✓ 已記錄」提示 ----------
 // iPhone 的 Safari 不支援 navigator.vibrate；但 iOS 18 起，切換一個 <input switch> 開關會有系統觸感，
 // 所以建立一個看不見的開關點一下。Android 則直接用 vibrate。不支援的裝置什麼都不會發生。
+let hapticLabel = null;
 function haptic() {
   try {
     if (typeof navigator.vibrate === 'function' && navigator.vibrate(10)) return;
-    const label = document.createElement('label'), input = document.createElement('input');
-    label.setAttribute('aria-hidden', 'true'); label.style.display = 'none';
-    input.type = 'checkbox'; input.setAttribute('switch', '');
-    label.append(input); document.head.append(label); label.click(); label.remove();
+    // 開關必須真的「畫在畫面上」（只是看不見），用 display:none 藏起來在新版 iOS 不會震動
+    if (!hapticLabel || !hapticLabel.isConnected) {
+      const input = document.createElement('input');
+      input.type = 'checkbox'; input.setAttribute('switch', ''); input.id = 'ledger-haptic'; input.tabIndex = -1;
+      hapticLabel = document.createElement('label');
+      hapticLabel.htmlFor = input.id; hapticLabel.setAttribute('aria-hidden', 'true');
+      hapticLabel.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0;opacity:.01;pointer-events:none;';
+      input.style.cssText = 'pointer-events:none;';
+      hapticLabel.append(input); document.body.append(hapticLabel);
+    }
+    hapticLabel.click();
   } catch {}
 }
 let toastEl = null, toastTimer = 0;
