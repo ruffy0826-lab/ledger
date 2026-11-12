@@ -67,6 +67,31 @@ const stmtBefore = (day, d) => clampDay(d.getFullYear(), d.getMonth() - 1, day);
 const stmtAfter = (day, d) => clampDay(d.getFullYear(), d.getMonth() + 1, day);
 const dueAfter = (dueDay, stmt) => { const d = clampDay(stmt.getFullYear(), stmt.getMonth(), dueDay); return d > stmt ? d : clampDay(stmt.getFullYear(), stmt.getMonth() + 1, dueDay); };
 
+// ---------- 回饋：觸感＋「✓ 已記錄」提示 ----------
+// iPhone 的 Safari 不支援 navigator.vibrate；但 iOS 18 起，切換一個 <input switch> 開關會有系統觸感，
+// 所以建立一個看不見的開關點一下。Android 則直接用 vibrate。不支援的裝置什麼都不會發生。
+function haptic() {
+  try {
+    if (typeof navigator.vibrate === 'function' && navigator.vibrate(10)) return;
+    const label = document.createElement('label'), input = document.createElement('input');
+    label.setAttribute('aria-hidden', 'true'); label.style.display = 'none';
+    input.type = 'checkbox'; input.setAttribute('switch', '');
+    label.append(input); document.head.append(label); label.click(); label.remove();
+  } catch {}
+}
+let toastEl = null, toastTimer = 0;
+function toast(msg) {
+  if (!toastEl) { toastEl = document.createElement('div'); toastEl.className = 'ledger-toast'; toastEl.setAttribute('role', 'status'); document.body.append(toastEl); }
+  toastEl.textContent = '✓ ' + msg;
+  toastEl.classList.remove('is-on'); void toastEl.offsetWidth; toastEl.classList.add('is-on');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove('is-on'), 1500);
+}
+function feedback(msg, btn) {
+  haptic();
+  if (msg) toast(msg);
+  if (btn) { btn.classList.remove('is-pop'); void btn.offsetWidth; btn.classList.add('is-pop'); }
+}
+
 const SKELETON = `
 <section class="ledger" aria-label="記帳">
   <header class="ledger__head">
@@ -98,7 +123,8 @@ const SKELETON = `
         <div class="ledger__catadd ledger__field--wide" data-r="catNew" hidden><input name="newcat" type="text" maxlength="12" placeholder="新分類名稱" aria-label="新分類名稱" autocomplete="off"><button class="ledger__btn ledger__btn--primary" type="button" data-act="cat-new-save">新增</button><button class="ledger__btn" type="button" data-act="cat-new-cancel">取消</button></div>
         <label class="ledger__field"><span>日期</span><input name="date" type="date"></label>
         <label class="ledger__field"><span>時間</span><input name="time" type="time"></label>
-        <label class="ledger__field ledger__field--wide"><span>備註</span><input name="note" type="text" maxlength="60" placeholder="例如：午餐"></label>
+        <div class="ledger__chips" data-r="noteChips" role="group" aria-label="常用備註" hidden></div>
+        <label class="ledger__field ledger__field--wide"><span>備註</span><input name="note" type="text" maxlength="60" placeholder="例如：午餐" autocomplete="off"></label>
         <p class="ledger__error" data-r="error" role="alert"></p>
         <button class="ledger__btn ledger__btn--primary" type="submit" data-r="submit">新增記錄</button>
         <button class="ledger__btn" type="button" data-act="edit-cancel" data-r="cancel" hidden>取消修改</button>
@@ -190,6 +216,55 @@ export function createLedger(root, options = {}) {
   };
   const loanName = id => state.loans.find(l => l.id === id)?.name || '（已刪除的貸款）';
   const personName = id => state.people.find(p => p.id === id)?.name || '?';
+
+  // ---------- 常用備註（類似 MOZE）：依「分類」或「往來對象」記住打過的備註，常用、最近用的排前面 ----------
+  // 直接從既有記錄算出來，不另外存資料；長按刪掉的備註只是「不再建議」，存在這支手機上
+  const NOTE_HIDE_KEY = 'ledger:noteHide';
+  let noteHide = new Set();
+  try { noteHide = new Set(JSON.parse(localStorage.getItem(NOTE_HIDE_KEY)) || []); } catch {}
+  const txNoteKey = t => (DEBT[t.type] ? 'p:' + t.personId : t.type === 'transfer' ? 'transfer' : t.type + ':' + t.category);
+  function formNoteKey() {
+    const f = $('form');
+    if (type === 'debt') return f.person.value && f.person.value !== '__new__' ? 'p:' + f.person.value : '';
+    if (type === 'transfer') return 'transfer';
+    return f.category.value && f.category.value !== '__new__' ? type + ':' + f.category.value : '';
+  }
+  function noteSuggest(key) {
+    const now = Date.now(), m = new Map();
+    for (const t of state.transactions) {
+      const n = String(t.note || '').trim();
+      if (!n || t.installId || t.loanId || txNoteKey(t) !== key || noteHide.has(key + '\u0000' + n)) continue;
+      const when = new Date(`${t.date}T${t.time || '12:00'}`).getTime() || 0, e = m.get(n) || { n, c: 0, last: 0 };
+      e.c++; e.last = Math.max(e.last, when); m.set(n, e);
+    }
+    // 分數＝使用次數，越久沒用打越多折（每 30 天打一次折），所以常用又最近用的排最前面
+    return [...m.values()].map(e => ({ ...e, s: e.c / (1 + Math.max(0, now - e.last) / 864e5 / 30) })).sort((a, b) => b.s - a.s || b.last - a.last);
+  }
+  function renderNoteChips() {
+    const f = $('form'), box = $('noteChips'), key = formNoteKey(), cur = f.note.value.trim(), q = cur.toLowerCase();
+    const list = key ? noteSuggest(key).filter(e => e.n !== cur && (!q || e.n.toLowerCase().includes(q))).slice(0, 12) : [];
+    box.hidden = !list.length;
+    box.innerHTML = list.map(e => `<button type="button" class="ledger__chip" data-act="note-pick" data-note="${esc(e.n)}">${esc(e.n)}</button>`).join('');
+  }
+  // 長按備註標籤 → 不再建議
+  let pressTimer = 0, pressXY = null, skipClick = false;
+  const pressEnd = () => { clearTimeout(pressTimer); pressTimer = 0; pressXY = null; };
+  function onPressStart(e) {
+    const b = e.target.closest('.ledger__chip');
+    if (!b) return;
+    pressEnd(); pressXY = [e.clientX, e.clientY];
+    pressTimer = setTimeout(() => {
+      pressEnd(); skipClick = true; haptic();
+      const key = formNoteKey(), n = b.dataset.note;
+      if (key && confirm(`不再建議「${n}」？\n已經記下的記錄不會改變。`)) {
+        noteHide.add(key + '\u0000' + n);
+        try { localStorage.setItem(NOTE_HIDE_KEY, JSON.stringify([...noteHide])); } catch {}
+        renderNoteChips();
+      }
+      setTimeout(() => { skipClick = false; }, 400);
+    }, 550);
+  }
+  const onPressMove = e => { if (pressXY && Math.hypot(e.clientX - pressXY[0], e.clientY - pressXY[1]) > 10) pressEnd(); };
   const rank = { none: 0, ok: 0, warn: 1, over: 2 };
   const budgetState = (cat, m) => {
     const spent = sum(inMonth(m).filter(t => t.type === 'expense' && t.category === cat));
@@ -764,7 +839,7 @@ export function createLedger(root, options = {}) {
     fillAccounts();
     if (type === 'expense' || type === 'income') fillCats();
     if (type === 'debt') fillPeople();
-    renderSummary(); renderAlerts(); renderPending(); renderCats(); renderDaily(); renderList(); renderAccounts();
+    renderSummary(); renderAlerts(); renderPending(); renderCats(); renderDaily(); renderList(); renderAccounts(); renderNoteChips();
     root.querySelectorAll('[data-pct]').forEach(el => { el.style.width = el.dataset.pct + '%'; });
   }
 
@@ -786,6 +861,7 @@ export function createLedger(root, options = {}) {
     $('accLabel').textContent = tr ? '轉出帳戶' : db ? (INFLOW.has(f.debtKind.value) ? '入帳帳戶' : '付款帳戶') : '帳戶';
     if (db) { fillPeople(); $('debtHint').textContent = DEBT_HINT[f.debtKind.value]; }
     if (cat) fillCats();
+    renderNoteChips();
   }
   function fillPeople(sel) {
     const f = $('form'), old = sel ?? (f.person.value === '__new__' ? lastPerson : f.person.value);
@@ -818,13 +894,13 @@ export function createLedger(root, options = {}) {
     }
     f.account.value = t.accountId; if (t.toAccountId) f.toAccount.value = t.toAccountId;
     f.amount.value = t.amount; f.date.value = t.date; f.time.value = t.time || ''; f.note.value = t.note || '';
-    $('submit').textContent = '儲存修改'; $('cancel').hidden = false; f.classList.add('is-editing');
+    $('submit').textContent = '儲存修改'; $('cancel').hidden = false; f.classList.add('is-editing'); renderNoteChips();
     showError(''); f.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }
   function endEdit() {
     const f = $('form');
     editId = null; f.amount.value = ''; f.note.value = ''; f.time.value = nowTime();
-    $('submit').textContent = '新增記錄'; $('cancel').hidden = true; f.classList.remove('is-editing');
+    $('submit').textContent = '新增記錄'; $('cancel').hidden = true; f.classList.remove('is-editing'); renderNoteChips();
   }
 
   // 信用卡繳款：自動帶入「從銀行轉帳到這張卡」，金額預設為目前欠款
@@ -851,7 +927,7 @@ export function createLedger(root, options = {}) {
     f.debtKind.value = kind; syncForm(); fillPeople(personId); f.account.value = acc.id;
     const b = Math.abs(personBal(personId));
     f.amount.value = (kind === 'collect' || kind === 'payback') && b && !masked ? b : '';
-    f.date.value = today(); f.time.value = nowTime(); f.note.value = ''; showError('');
+    f.date.value = today(); f.time.value = nowTime(); f.note.value = ''; showError(''); renderNoteChips();
     root.dispatchEvent(new CustomEvent('ledger:goto', { detail: 'records' }));
     f.amount.focus();
   }
@@ -865,8 +941,11 @@ export function createLedger(root, options = {}) {
     if (act === 'prev' || act === 'next') {
       const [y, m] = month.split('-').map(Number), d = new Date(y, m - 1 + (act === 'next' ? 1 : -1), 1);
       setMonth(`${d.getFullYear()}-${pad(d.getMonth() + 1)}`);
+    } else if (act === 'note-pick') {
+      if (skipClick) return;
+      $('form').note.value = b.dataset.note; haptic(); renderNoteChips();
     } else if (act === 'remove') {
-      if (confirm('刪除這筆記錄？')) removeTransaction(b.dataset.id);
+      if (confirm('刪除這筆記錄？')) { removeTransaction(b.dataset.id); feedback('已刪除'); }
     } else if (act === 'budget-edit' || act === 'budget-cancel') {
       editing = act === 'budget-edit'; update();
     } else if (act === 'edit') { if (state.transactions.find(t => t.id === b.dataset.id)?.type === 'loanprin') return alert('貸款本金記錄無法修改。請刪除後，到「資產 › 貸款」重新記錄。'); startEdit(b.dataset.id); if (b.closest('[data-r="accounts"]')) root.dispatchEvent(new CustomEvent('ledger:goto', { detail: 'records' })); }
@@ -878,15 +957,15 @@ export function createLedger(root, options = {}) {
     else if (act === 'loan-formcancel') { loanForm = null; renderAccounts(); }
     else if (act === 'loan-pay') { payMode = b.dataset.mode; renderAccounts(); }
     else if (act === 'loan-paycancel') { payMode = null; renderAccounts(); }
-    else if (act === 'loan-del') { if (confirm('刪除這筆貸款？已經記下的繳款記錄會保留。')) removeLoan(b.dataset.id); }
+    else if (act === 'loan-del') { if (confirm('刪除這筆貸款？已經記下的繳款記錄會保留。')) { removeLoan(b.dataset.id); feedback('已刪除'); } }
     else if (act === 'inst-new') { instForm = 'new'; renderAccounts(); }
     else if (act === 'inst-open') { instOpen = b.dataset.id; renderAccounts(); scrollTo(0, 0); }
     else if (act === 'inst-back') { instOpen = null; instForm = null; renderAccounts(); }
     else if (act === 'inst-edit') { instForm = b.dataset.id; renderAccounts(); }
     else if (act === 'inst-formcancel') { instForm = null; renderAccounts(); }
-    else if (act === 'inst-del') { if (confirm('刪除這筆分期？已經確認的支出會保留。')) removeInstall(b.dataset.id); }
-    else if (act === 'inst-confirm') confirmInstall(b.dataset.id, b.dataset.idx)
-    else if (act === 'inst-confirm-all') { pendingInst().forEach(x => confirmInstall(x.p.id, x.i, true)); update(); persist(); }
+    else if (act === 'inst-del') { if (confirm('刪除這筆分期？已經確認的支出會保留。')) { removeInstall(b.dataset.id); feedback('已刪除'); } }
+    else if (act === 'inst-confirm') { confirmInstall(b.dataset.id, b.dataset.idx); feedback('已確認', b); }
+    else if (act === 'inst-confirm-all') { pendingInst().forEach(x => confirmInstall(x.p.id, x.i, true)); update(); persist(); feedback('已全部確認'); }
     else if (act === 'ppl-open') { personOpen = b.dataset.id; pplForm = null; renderAccounts(); scrollTo(0, 0); }
     else if (act === 'ppl-back') { personOpen = null; pplForm = null; renderAccounts(); }
     else if (act === 'ppl-add') { pplForm = 'new'; renderAccounts(); focusIn('[data-form="person"] input'); }
@@ -898,7 +977,7 @@ export function createLedger(root, options = {}) {
     else if (act === 'ppl-act') startDebt(b.dataset.id, b.dataset.kind);
     else if (act === 'ppl-rename') { pplForm = b.dataset.id; renderAccounts(); focusIn('[data-form="person"] input'); }
     else if (act === 'ppl-del') {
-      if (confirm('刪除這個對象？')) { try { removePerson(b.dataset.id); } catch (err) { alert(err.message); } }
+      if (confirm('刪除這個對象？')) { try { removePerson(b.dataset.id); feedback('已刪除'); } catch (err) { alert(err.message); } }
     }
     else if (act === 'edit-cancel') endEdit();
     else if (act === 'catmgr-open') { catMgr = true; editing = false; update(); }
@@ -907,26 +986,39 @@ export function createLedger(root, options = {}) {
       const to = prompt(`把「${b.dataset.name}」改名為：`, b.dataset.name);
       if (to !== null) { try { renameCategory(b.dataset.type, b.dataset.name, to); } catch (err) { alert(err.message); } }
     } else if (act === 'cat-del') {
-      if (confirm(`從選單移除「${b.dataset.name}」？\n既有的記錄不會被刪除。`)) { try { removeCategory(b.dataset.type, b.dataset.name); } catch (err) { alert(err.message); } }
+      if (confirm(`從選單移除「${b.dataset.name}」？\n既有的記錄不會被刪除。`)) { try { removeCategory(b.dataset.type, b.dataset.name); feedback('已移除'); } catch (err) { alert(err.message); } }
     }
     else if (act === 'acc-new') { accEdit = 'new'; renderAccounts(); }
     else if (act === 'acc-edit') { accEdit = b.dataset.id; renderAccounts(); }
     else if (act === 'acc-cancel') { accEdit = null; renderAccounts(); }
     else if (act === 'acc-pay') startPay(b.dataset.id);
     else if (act === 'acc-delete') {
-      if (confirm('刪除這個帳戶？')) { try { removeAccount(b.dataset.id); } catch (err) { alert(err.message); } }
+      if (confirm('刪除這個帳戶？')) { try { removeAccount(b.dataset.id); feedback('已刪除'); } catch (err) { alert(err.message); } }
     }
   };
   function focusIn(sel) { const el = root.querySelector(sel); if (el) { el.focus(); el.select?.(); } }
   function savePersonInline() {
     const f = $('form'), n = f.newperson.value;
     if (!n.trim()) return f.newperson.focus();
-    try { const id = addPerson(n); fillPeople(id); $('personNew').hidden = true; showError(''); } catch (err) { showError(err.message); }
+    try { const id = addPerson(n); fillPeople(id); $('personNew').hidden = true; showError(''); renderNoteChips(); feedback('已新增對象'); } catch (err) { showError(err.message); }
   }
   function saveCatInline() {
     const f = $('form'), n = f.newcat.value;
     if (!n.trim()) return f.newcat.focus();
-    try { const c = addCategory(type, n); fillCats(c); $('catNew').hidden = true; showError(''); } catch (err) { showError(err.message); }
+    try { const c = addCategory(type, n); fillCats(c); $('catNew').hidden = true; showError(''); renderNoteChips(); feedback('已新增分類'); } catch (err) { showError(err.message); }
+  }
+  // 「對方還我」或「我還款」超過目前欠款時先提醒，避免餘額被翻成相反方向（例如從舊 App 搬過來、漏記了代墊）
+  function overpayOk(input) {
+    const ty = input.type;
+    if ((ty !== 'collect' && ty !== 'payback') || !state.people.some(p => p.id === input.personId)) return true;
+    const bal = personBal(input.personId), owed = round2(ty === 'collect' ? bal : -bal), amt = round2(Number(input.amount));
+    if (!(amt > 0) || amt <= owed) return true;
+    const name = personName(input.personId);
+    const head = ty === 'collect'
+      ? (owed > 0 ? `${name} 目前只欠你 ${money(owed)}，這筆收回 ${money(amt)} 比較多。` : `${name} 目前沒有欠你錢。`)
+      : (owed > 0 ? `你目前只欠 ${name} ${money(owed)}，這筆還款 ${money(amt)} 比較多。` : `你目前沒有欠 ${name} 錢。`);
+    const tail = ty === 'collect' ? '多出來的部分會變成「你欠對方」。\n如果是之前的代墊或借出沒有記到，請先補記那一筆。' : '多出來的部分會變成「對方欠你」。\n如果是之前的借入沒有記到，請先補記那一筆。';
+    return confirm(`${head}\n\n${tail}\n\n仍要記錄嗎？`);
   }
   const onSubmit = e => {
     const f = e.target;
@@ -937,41 +1029,46 @@ export function createLedger(root, options = {}) {
       if (!ready) return showError('資料載入中，請稍候。');
       try {
         const input = { type: type === 'debt' ? f.debtKind.value : type, personId: f.person.value, amount: f.amount.value, accountId: f.account.value, toAccountId: f.toAccount.value, category: f.category.value, date: f.date.value, time: f.time.value, note: f.note.value };
+        if (!editId && !overpayOk(input)) return;
+        const wasEdit = !!editId;
         if (editId) { updateTransaction(editId, input); endEdit(); } else addTransaction(input);
-        f.amount.value = ''; f.note.value = ''; f.time.value = nowTime(); showError(''); f.amount.focus();
+        f.amount.value = ''; f.note.value = ''; f.time.value = nowTime(); showError(''); renderNoteChips();
+        feedback(wasEdit ? '已儲存修改' : '已記錄', $('submit'));
+        f.amount.focus();
       } catch (err) { showError(err.message); }
     } else if (f.matches('[data-form="budget"]')) {
       e.preventDefault();
       f.querySelectorAll('input[data-cat]').forEach(i => putBudget(i.dataset.cat, i.value));
-      editing = false; update(); persist();
+      editing = false; update(); persist(); feedback('預算已儲存');
     } else if (f.matches('[data-form="account"]')) {
       e.preventDefault();
       const credit = f.kind.value === 'credit', n = Number(f.opening.value) || 0;
       try {
         saveAccount(f.dataset.id || null, { name: f.accname.value, kind: f.kind.value, opening: credit ? -Math.abs(n) : n, statementDay: f.statementDay.value, dueDay: f.dueDay.value, limit: f.limit.value });
+        feedback('帳戶已儲存');
       } catch (err) { f.querySelector('[data-acc-error]').textContent = err.message; }
     } else if (f.matches('[data-form="loan"]')) {
       e.preventDefault();
-      try { saveLoan(f.dataset.id || null, { name: f.lname.value, kind: f.lkind.value, rate: f.lrate.value, method: f.lmethod.value, payDay: f.lday.value, accountId: f.lacc.value, balance0: f.lbal?.value, months: f.lmonths?.value, grace: f.lgrace?.value, startDate: f.lstart?.value }); }
+      try { saveLoan(f.dataset.id || null, { name: f.lname.value, kind: f.lkind.value, rate: f.lrate.value, method: f.lmethod.value, payDay: f.lday.value, accountId: f.lacc.value, balance0: f.lbal?.value, months: f.lmonths?.value, grace: f.lgrace?.value, startDate: f.lstart?.value }); feedback('貸款已儲存'); }
       catch (err) { f.querySelector('[data-acc-error]').textContent = err.message; }
     } else if (f.matches('[data-form="loanpay"]')) {
       e.preventDefault();
-      try { payLoan(f.dataset.id, { date: f.pdate.value, accountId: f.pacc.value, interest: f.pint.value, principal: f.ppri.value, extra: f.dataset.mode === 'extra' }); }
+      try { payLoan(f.dataset.id, { date: f.pdate.value, accountId: f.pacc.value, interest: f.pint.value, principal: f.ppri.value, extra: f.dataset.mode === 'extra' }); feedback('已記錄繳款'); }
       catch (err) { f.querySelector('[data-acc-error]').textContent = err.message; }
     } else if (f.matches('[data-form="inst"]')) {
       e.preventDefault();
-      try { saveInstall(f.dataset.id || null, { name: f.iname.value, amount: f.iamt.value, periods: f.iper.value, firstDate: f.istart.value, accountId: f.iacc.value, category: f.icat.value, paid0: f.ipaid.value }); }
+      try { saveInstall(f.dataset.id || null, { name: f.iname.value, amount: f.iamt.value, periods: f.iper.value, firstDate: f.istart.value, accountId: f.iacc.value, category: f.icat.value, paid0: f.ipaid.value }); feedback('分期已儲存'); }
       catch (err) { f.querySelector('[data-acc-error]').textContent = err.message; }
     } else if (f.matches('[data-form="person"]')) {
       e.preventDefault();
       const id = f.dataset.id, n = f.pname.value;
       try {
-        if (id) { pplForm = null; renamePerson(id, n); }
-        else { const nid = addPerson(n); pplForm = null; personOpen = nid; renderAccounts(); scrollTo(0, 0); }
+        if (id) { pplForm = null; renamePerson(id, n); feedback('已改名'); }
+        else { const nid = addPerson(n); pplForm = null; personOpen = nid; renderAccounts(); scrollTo(0, 0); feedback('已新增對象'); }
       } catch (err) { f.parentNode.querySelector('[data-ppl-error]').textContent = err.message; if (id) pplForm = id; }
     } else if (f.matches('[data-form="catadd"]')) {
       e.preventDefault();
-      try { addCategory(f.dataset.type, f.catname.value); } catch (err) { alert(err.message); }
+      try { addCategory(f.dataset.type, f.catname.value); feedback('已新增分類'); } catch (err) { alert(err.message); }
     }
   };
   const onType = e => {
@@ -991,10 +1088,17 @@ export function createLedger(root, options = {}) {
       f.querySelector('[data-credit]').hidden = !c;
       f.querySelector('[data-r="openLabel"]').textContent = c ? '目前欠款' : '初始餘額';
     }
+    if (e.target.name === 'category' || e.target.name === 'person') renderNoteChips();
   };
   root.addEventListener('click', onClick);
   root.addEventListener('submit', onSubmit);
-  const onInput = e => { if (e.target.matches('[data-r="search"]')) renderList(); };
+  const onInput = e => { if (e.target.matches('[data-r="search"]')) renderList(); else if (e.target === $('form').note) renderNoteChips(); };
+  const onCtx = e => { if (e.target.closest('.ledger__chip')) e.preventDefault(); };
+  root.addEventListener('pointerdown', onPressStart);
+  root.addEventListener('pointermove', onPressMove);
+  root.addEventListener('pointerup', pressEnd);
+  root.addEventListener('pointercancel', pressEnd);
+  root.addEventListener('contextmenu', onCtx);
   root.addEventListener('change', onType);
   root.addEventListener('input', onInput);
 
@@ -1016,6 +1120,11 @@ export function createLedger(root, options = {}) {
       root.removeEventListener('submit', onSubmit);
       root.removeEventListener('change', onType);
       root.removeEventListener('input', onInput);
+      root.removeEventListener('pointerdown', onPressStart);
+      root.removeEventListener('pointermove', onPressMove);
+      root.removeEventListener('pointerup', pressEnd);
+      root.removeEventListener('pointercancel', pressEnd);
+      root.removeEventListener('contextmenu', onCtx);
       root.replaceChildren();
     },
   };
