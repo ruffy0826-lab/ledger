@@ -94,8 +94,9 @@ function toast(msg) {
   toastEl.classList.remove('is-on'); void toastEl.offsetWidth; toastEl.classList.add('is-on');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove('is-on'), 1500);
 }
+let nativeTap = false;   // 這次是手指直接按到透明開關，iPhone 已經震過了
 function feedback(msg, btn) {
-  haptic();
+  if (nativeTap) nativeTap = false; else haptic();
   if (msg) toast(msg);
   if (btn) { btn.classList.remove('is-pop'); void btn.offsetWidth; btn.classList.add('is-pop'); }
 }
@@ -134,7 +135,10 @@ const SKELETON = `
         <div class="ledger__chips" data-r="noteChips" role="group" aria-label="常用備註" hidden></div>
         <label class="ledger__field ledger__field--wide"><span>備註</span><input name="note" type="text" maxlength="60" placeholder="例如：午餐" autocomplete="off"></label>
         <p class="ledger__error" data-r="error" role="alert"></p>
-        <button class="ledger__btn ledger__btn--primary" type="submit" data-r="submit">新增記錄</button>
+        <div class="ledger__submitwrap">
+          <button class="ledger__btn ledger__btn--primary" type="submit" data-r="submit">新增記錄</button>
+          <label class="ledger__hpad" data-r="hpad" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label>
+        </div>
         <button class="ledger__btn" type="button" data-act="edit-cancel" data-r="cancel" hidden>取消修改</button>
       </form>
       <input class="ledger__search" type="search" data-r="search" placeholder="搜尋記錄（備註、分類、帳戶、金額）" aria-label="搜尋記錄" autocomplete="off">
@@ -1080,6 +1084,8 @@ export function createLedger(root, options = {}) {
     }
   };
   const onType = e => {
+    // 「新增記錄」按鈕上蓋了一層透明的 iOS 開關：手指按到它時 iPhone 會震一下，再由這裡送出表單
+    if (e.target.closest('[data-r="hpad"]')) { nativeTap = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent)); $('form').requestSubmit($('submit')); nativeTap = false; return; }
     if (e.target.name === 'category' && e.target.value !== '__new__') lastCat = e.target.value;
     if (e.target.matches('[data-pdue]')) { try { setPersonDue(e.target.dataset.pdue, e.target.value); } catch (err) { alert(err.message); } return; }
     if (e.target.name === 'person' && e.target.value !== '__new__') lastPerson = e.target.value;

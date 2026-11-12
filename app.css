@@ -321,3 +321,10 @@ body:is(.is-hearts, .is-stars, .is-y2k) .tabbar button[aria-current="true"] { co
   transition: opacity .2s, transform .2s; }
 .ledger-toast.is-on { opacity: 1; transform: translate(-50%, 0); }
 @media (prefers-reduced-motion: reduce) { .ledger__btn.is-pop { animation: none; } .ledger-toast { transition: opacity .2s; transform: translate(-50%, 0); } }
+
+/* 「新增記錄」上的透明開關：讓 iPhone 在手指按下時有觸感 */
+.ledger__submitwrap { grid-column: 1 / -1; position: relative; display: grid; }
+.ledger__submitwrap .ledger__btn { grid-column: 1; }
+.ledger__hpad { position: absolute; inset: 0; z-index: 1; cursor: pointer; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
+.ledger__hpad input { position: absolute; top: 50%; left: 50%; width: 1px; height: 1px; margin: 0; opacity: .01; pointer-events: none; }
+.ledger__submitwrap:active .ledger__btn { transform: scale(.98); }
