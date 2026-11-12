@@ -94,6 +94,7 @@ function toast(msg) {
   toastEl.classList.remove('is-on'); void toastEl.offsetWidth; toastEl.classList.add('is-on');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove('is-on'), 1500);
 }
+const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent));
 let nativeTap = false;   // 這次是手指直接按到透明開關，iPhone 已經震過了
 function feedback(msg, btn) {
   if (nativeTap) nativeTap = false; else haptic();
@@ -135,10 +136,7 @@ const SKELETON = `
         <div class="ledger__chips" data-r="noteChips" role="group" aria-label="常用備註" hidden></div>
         <label class="ledger__field ledger__field--wide"><span>備註</span><input name="note" type="text" maxlength="60" placeholder="例如：午餐" autocomplete="off"></label>
         <p class="ledger__error" data-r="error" role="alert"></p>
-        <div class="ledger__submitwrap">
-          <button class="ledger__btn ledger__btn--primary" type="submit" data-r="submit">新增記錄</button>
-          <label class="ledger__hpad" data-r="hpad" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label>
-        </div>
+        <span class="ledger__hw"><button class="ledger__btn ledger__btn--primary" type="submit" data-r="submit">新增記錄</button><label class="ledger__hpad" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label></span>
         <button class="ledger__btn" type="button" data-act="edit-cancel" data-r="cancel" hidden>取消修改</button>
       </form>
       <input class="ledger__search" type="search" data-r="search" placeholder="搜尋記錄（備註、分類、帳戶、金額）" aria-label="搜尋記錄" autocomplete="off">
@@ -256,7 +254,7 @@ export function createLedger(root, options = {}) {
     const f = $('form'), box = $('noteChips'), key = formNoteKey(), cur = f.note.value.trim(), q = cur.toLowerCase();
     const list = key ? noteSuggest(key).filter(e => e.n !== cur && (!q || e.n.toLowerCase().includes(q))).slice(0, 12) : [];
     box.hidden = !list.length;
-    box.innerHTML = list.map(e => `<button type="button" class="ledger__chip" data-act="note-pick" data-note="${esc(e.n)}">${esc(e.n)}</button>`).join('');
+    box.innerHTML = list.map(e => `<label class="ledger__chip" data-note="${esc(e.n)}"><input type="checkbox" switch tabindex="-1" aria-hidden="true">${esc(e.n)}</label>`).join('');
   }
   // 長按備註標籤 → 不再建議
   let pressTimer = 0, pressXY = null, skipClick = false;
@@ -567,8 +565,8 @@ export function createLedger(root, options = {}) {
   function renderPending() {
     const list = pendingInst();
     $('pending').innerHTML = !list.length ? '' :
-      `<div class="ledger__sec-head"><h3>待確認的分期付款</h3>${list.length > 1 ? '<button class="ledger__link" type="button" data-act="inst-confirm-all">全部確認</button>' : ''}</div><ul>` +
-      list.map(x => `<li class="ledger__pend"><span>${esc(x.p.name)}<small class="ledger__muted">第 ${x.i + 1}/${x.p.periods} 期 · ${mmdd(x.date)} · ${esc(accName(x.p.accountId))}</small></span><span class="ledger__num">${money(x.p.amount)}</span><button class="ledger__pay" type="button" data-act="inst-confirm" data-id="${esc(x.p.id)}" data-idx="${x.i}">確認</button></li>`).join('') + '</ul>';
+      `<div class="ledger__sec-head"><h3>待確認的分期付款</h3>${list.length > 1 ? '<span class="ledger__hw"><button class="ledger__link" type="button" data-act="inst-confirm-all">全部確認</button><label class="ledger__hpad" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label></span>' : ''}</div><ul>` +
+      list.map(x => `<li class="ledger__pend"><span>${esc(x.p.name)}<small class="ledger__muted">第 ${x.i + 1}/${x.p.periods} 期 · ${mmdd(x.date)} · ${esc(accName(x.p.accountId))}</small></span><span class="ledger__num">${money(x.p.amount)}</span><span class="ledger__hw"><button class="ledger__pay" type="button" data-act="inst-confirm" data-id="${esc(x.p.id)}" data-idx="${x.i}">確認</button><label class="ledger__hpad" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label></span></li>`).join('') + '</ul>';
   }
 
   function renderCatMgr() {
@@ -576,7 +574,7 @@ export function createLedger(root, options = {}) {
       `<h4 class="ledger__gt">${title}</h4><ul class="ledger__catlist">${state.categories[ty].map(c =>
         `<li><span>${esc(c)}</span><button type="button" class="ledger__link" data-act="cat-rename" data-type="${ty}" data-name="${esc(c)}">改名</button>` +
         `<button type="button" class="ledger__link ledger__link--danger" data-act="cat-del" data-type="${ty}" data-name="${esc(c)}">移除</button></li>`).join('')}</ul>` +
-      `<form class="ledger__catadd" data-form="catadd" data-type="${ty}" novalidate><input name="catname" type="text" maxlength="12" placeholder="新增${title}分類" aria-label="新增${title}分類" autocomplete="off"><button class="ledger__btn" type="submit">新增</button></form>`;
+      `<form class="ledger__catadd" data-form="catadd" data-type="${ty}" novalidate><input name="catname" type="text" maxlength="12" placeholder="新增${title}分類" aria-label="新增${title}分類" autocomplete="off"><span class="ledger__hw"><button class="ledger__btn" type="submit">新增</button><label class="ledger__hpad" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label></span></form>`;
     $('cats').innerHTML = `<div class="ledger__sec-head"><h3>管理分類</h3><button class="ledger__link" type="button" data-act="catmgr-close">完成</button></div>` +
       `<p class="ledger__hint">改名會連同舊記錄一起更新。移除只是從選單拿掉，既有記錄不會被刪除。</p>` + group('expense', '支出') + group('income', '收入');
   }
@@ -593,7 +591,7 @@ export function createLedger(root, options = {}) {
     if (editing) {
       body = `<form class="ledger__budget" data-form="budget"><p class="ledger__hint">每月預算，留空代表不設定。</p>` +
         names.map(c => `<label class="ledger__budget-row"><span>${esc(c)}</span><input type="number" min="0" step="any" inputmode="decimal" data-cat="${esc(c)}" value="${state.budgets[c] || ''}"></label>`).join('') +
-        `<div class="ledger__actions"><button class="ledger__btn ledger__btn--primary" type="submit">儲存預算</button><button class="ledger__btn" type="button" data-act="budget-cancel">取消</button></div></form>`;
+        `<div class="ledger__actions"><span class="ledger__hw"><button class="ledger__btn ledger__btn--primary" type="submit">儲存預算</button><label class="ledger__hpad" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label></span><button class="ledger__btn" type="button" data-act="budget-cancel">取消</button></div></form>`;
     } else if (!names.length) {
       body = '<p class="ledger__empty">本月還沒有支出。</p>';
     } else {
@@ -645,7 +643,7 @@ export function createLedger(root, options = {}) {
           return head + `<li class="ledger__tx"><time datetime="${t.date}${t.time ? 'T' + t.time : ''}">${t.time || '–'}</time>` +
             `<button type="button" class="ledger__tx-main" data-act="edit" data-id="${esc(t.id)}" aria-label="編輯 ${esc(t.category)} ${money(t.amount)}"><span>${esc(t.category)}</span><small class="ledger__muted">${esc(sub)}${t.note ? ' · ' + esc(t.note) : ''}</small></button>` +
             `<span class="ledger__num is-${DEBT[t.type] || t.type === 'loanprin' ? 'transfer' : t.type}">${sign}${money(t.amount)}</span>` +
-            `<button class="ledger__x" type="button" data-act="remove" data-id="${esc(t.id)}" aria-label="刪除 ${esc(t.category)} ${money(t.amount)}">×</button></li>`;
+            `<span class="ledger__hw"><button class="ledger__x" type="button" data-act="remove" data-id="${esc(t.id)}" aria-label="刪除 ${esc(t.category)} ${money(t.amount)}">×</button><label class="ledger__hpad" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label></span></li>`;
         }).join('')}</ul>`
         : `<p class="ledger__empty">${q ? '找不到符合的記錄。' : '這個月還沒有記錄。在上方新增第一筆。'}</p>`);
   }
@@ -716,7 +714,7 @@ export function createLedger(root, options = {}) {
       `<label class="ledger__field"><span>結帳日（每月）</span><input name="statementDay" type="number" min="1" max="31" inputmode="numeric" value="${f.statementDay || ''}"></label>` +
       `<label class="ledger__field"><span>繳款日（每月）</span><input name="dueDay" type="number" min="1" max="31" inputmode="numeric" value="${f.dueDay || ''}"></label></div>` +
       `<p class="ledger__error" data-acc-error role="alert"></p>` +
-      `<div class="ledger__actions"><button class="ledger__btn ledger__btn--primary" type="submit">儲存</button><button class="ledger__btn" type="button" data-act="acc-cancel">取消</button>` +
+      `<div class="ledger__actions"><span class="ledger__hw"><button class="ledger__btn ledger__btn--primary" type="submit">儲存</button><label class="ledger__hpad" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label></span><button class="ledger__btn" type="button" data-act="acc-cancel">取消</button>` +
       `${f.id ? `<button class="ledger__btn ledger__btn--danger" type="button" data-act="acc-delete" data-id="${esc(f.id)}">刪除</button>` : ''}</div></form>`;
     const groups = ['cash', 'bank', 'ewallet', 'credit'].map(k => {
       const items = bal.filter(x => x.a.kind === k);
@@ -764,7 +762,7 @@ export function createLedger(root, options = {}) {
       `<label class="ledger__field"><span>扣款帳戶</span><select name="lacc">${accOpts(v.accountId)}</select></label>` +
       (old ? '' : fld('寬限期剩餘月數（只繳利息，沒有填 0）', 'lgrace', '', 'type="number" min="0" inputmode="numeric" placeholder="0"') + fld('從哪天開始記錄', 'lstart', today(), 'type="date"')) +
       `<p class="ledger__hint ledger__field--wide">「目前剩餘本金」看銀行最近一期帳單。系統依剩餘本金、期數與利率試算每期的利息與本金，實際以銀行帳單為準，記錄繳款時可以直接修改金額。${old ? '要改剩餘本金或期數，請刪除後重建。利率調整時直接改年利率即可。' : ''}</p>` +
-      `<p class="ledger__error" data-acc-error role="alert"></p><div class="ledger__actions"><button class="ledger__btn ledger__btn--primary" type="submit">儲存</button><button class="ledger__btn" type="button" data-act="loan-formcancel">取消</button></div></form>`;
+      `<p class="ledger__error" data-acc-error role="alert"></p><div class="ledger__actions"><span class="ledger__hw"><button class="ledger__btn ledger__btn--primary" type="submit">儲存</button><label class="ledger__hpad" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label></span><button class="ledger__btn" type="button" data-act="loan-formcancel">取消</button></div></form>`;
   }
   function loanDetail(l) {
     const i = loanInfo(l), pct = Math.min(100, Math.max(0, (l.balance0 - i.rem) / l.balance0 * 100));
@@ -778,17 +776,17 @@ export function createLedger(root, options = {}) {
         `<label class="ledger__field"><span>利息（算支出）</span><input name="pint" type="number" min="0" step="any" inputmode="decimal" value="${ex ? '' : nx.interest}" placeholder="0"></label>` +
         `<label class="ledger__field"><span>${ex ? '提前還的本金' : '本金（不算支出）'}</span><input name="ppri" type="number" min="0" step="any" inputmode="decimal" value="${ex ? '' : nx.principal}" placeholder="0"></label>` +
         `<p class="ledger__hint ledger__field--wide">${ex ? '提前還本會直接減少剩餘本金，之後每期的利息與應繳金額會重新試算。' : '預設是試算值。如果銀行帳單的金額不同，請直接改成帳單上的利息與本金。'}</p>` +
-        `<p class="ledger__error" data-acc-error role="alert"></p><div class="ledger__actions"><button class="ledger__btn ledger__btn--primary" type="submit">${ex ? '記錄提前還本' : '記錄本期繳款'}</button><button class="ledger__btn" type="button" data-act="loan-paycancel">取消</button></div></form>`;
+        `<p class="ledger__error" data-acc-error role="alert"></p><div class="ledger__actions"><span class="ledger__hw"><button class="ledger__btn ledger__btn--primary" type="submit">${ex ? '記錄提前還本' : '記錄本期繳款'}</button><label class="ledger__hpad" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label></span><button class="ledger__btn" type="button" data-act="loan-paycancel">取消</button></div></form>`;
     }
     const plan = i.plan.slice(0, 12);
     return `<div class="ledger__sec-head"><button class="ledger__link" type="button" data-act="loan-back">‹ 貸款</button><span class="ledger__links"><button class="ledger__link" type="button" data-act="loan-edit" data-id="${esc(l.id)}">編輯</button><button class="ledger__link ledger__link--danger" type="button" data-act="loan-del" data-id="${esc(l.id)}">刪除</button></span></div>` +
       `<div class="ledger__person"><h3>${esc(l.name)}</h3><p class="ledger__status">${LOAN_KINDS[l.kind]} · 年利率 ${l.rate}% · ${LOAN_METHODS[l.method].split('（')[0]}<br>${i.rem > 0 ? `剩餘本金 <b>${money(i.rem)}</b>` : '<b>已還清</b>'}</p>` +
       `<div class="ledger__meter" aria-hidden="true"><i data-pct="${pct.toFixed(1)}"></i></div><small class="ledger__muted">已還 ${Math.round(pct)}%（${money(round2(l.balance0 - i.rem))} / ${money(l.balance0)}）</small>` +
       (nx ? `<dl class="ledger__cc-grid"><div><dt>下期應繳（估）</dt><dd>${money(nx.payment)} <small class="ledger__st ${dueDays < 0 ? 'is-over' : dueDays <= 3 ? 'is-warn' : ''}">${mmdd(nx.due)}${dueDays < 0 ? ` 逾期 ${-dueDays} 天` : dueDays === 0 ? ' 今天' : ` · ${dueDays} 天後`}</small></dd></div><div><dt>其中利息／本金</dt><dd>${money(nx.interest)} / ${money(nx.principal)}</dd></div><div><dt>剩餘期數</dt><dd>${i.plan.length} 期 <small class="ledger__st">約 ${dstr(i.plan[i.plan.length - 1].due)} 還清</small></dd></div><div><dt>預估剩餘利息</dt><dd>${money(i.totalInterest)}</dd></div></dl>` +
-        `<div class="ledger__actions" style="margin-top:16px"><button class="ledger__btn ledger__btn--primary" type="button" data-act="loan-pay" data-mode="regular">記錄本期繳款</button><button class="ledger__btn" type="button" data-act="loan-pay" data-mode="extra">提前還本</button></div>` : '') + `</div>` + pay +
+        `<div class="ledger__actions" style="margin-top:16px"><span class="ledger__hw"><button class="ledger__btn ledger__btn--primary" type="button" data-act="loan-pay" data-mode="regular">記錄本期繳款</button><label class="ledger__hpad" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label></span><button class="ledger__btn" type="button" data-act="loan-pay" data-mode="extra">提前還本</button></div>` : '') + `</div>` + pay +
       (plan.length ? `<details class="ledger__cc-more"><summary>還款試算（接下來 ${plan.length} 期）</summary><ul class="ledger__cc-tx">${plan.map(x => `<li><time>${dstr(x.due).slice(2)}</time><span class="ledger__muted">利息 ${money(x.interest)} · 本金 ${money(x.principal)}</span><span class="ledger__num">${money(x.payment)}</span></li>`).join('')}</ul><p class="ledger__hint">利息以每月 年利率÷12 試算，銀行若按實際天數計息會有小差異。</p></details>` : '') +
       `<div class="ledger__sec-head"><h3>繳款記錄</h3><small class="ledger__muted">${tx.length} 筆</small></div>` +
-      (tx.length ? `<ul>${tx.map(t => `<li class="ledger__tx"><time>${t.date.slice(2).replaceAll('-', '/')}</time><button type="button" class="ledger__tx-main" data-act="edit" data-id="${esc(t.id)}"><span>${t.type === 'loanprin' ? (t.extra ? '提前還本' : '本金') : '利息'}</span><small class="ledger__muted">${esc(accName(t.accountId))}</small></button><span class="ledger__num is-${t.type === 'expense' ? 'expense' : 'transfer'}">${t.type === 'expense' ? '−' : ''}${money(t.amount)}</span><button class="ledger__x" type="button" data-act="remove" data-id="${esc(t.id)}" aria-label="刪除">×</button></li>`).join('')}</ul><p class="ledger__hint">利息算在每月支出裡，本金只減少貸款餘額。</p>` : '<p class="ledger__empty">還沒有繳款記錄。</p>');
+      (tx.length ? `<ul>${tx.map(t => `<li class="ledger__tx"><time>${t.date.slice(2).replaceAll('-', '/')}</time><button type="button" class="ledger__tx-main" data-act="edit" data-id="${esc(t.id)}"><span>${t.type === 'loanprin' ? (t.extra ? '提前還本' : '本金') : '利息'}</span><small class="ledger__muted">${esc(accName(t.accountId))}</small></button><span class="ledger__num is-${t.type === 'expense' ? 'expense' : 'transfer'}">${t.type === 'expense' ? '−' : ''}${money(t.amount)}</span><span class="ledger__hw"><button class="ledger__x" type="button" data-act="remove" data-id="${esc(t.id)}" aria-label="刪除">×</button><label class="ledger__hpad" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label></span></li>`).join('')}</ul><p class="ledger__hint">利息算在每月支出裡，本金只減少貸款餘額。</p>` : '<p class="ledger__empty">還沒有繳款記錄。</p>');
   }
   function instFormHtml() {
     const old = instForm === 'new' ? null : state.installs.find(p => p.id === instForm);
@@ -803,13 +801,13 @@ export function createLedger(root, options = {}) {
       `<label class="ledger__field"><span>分類</span><select name="icat">${cats.map(c => `<option value="${esc(c)}"${(old?.category || (cats.includes('購物') ? '購物' : cats[0])) === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></label>` +
       fld('已經繳了幾期（沒有填 0）', 'ipaid', old?.paid0 || '', 'type="number" min="0" inputmode="numeric" placeholder="0"') +
       `<p class="ledger__hint ledger__field--wide">每一期到期日，記帳頁會出現「待確認」，按一下才記成一筆支出（信用卡就記在那張卡上）。App 不會在背景自動記帳。</p>` +
-      `<p class="ledger__error" data-acc-error role="alert"></p><div class="ledger__actions"><button class="ledger__btn ledger__btn--primary" type="submit">儲存</button><button class="ledger__btn" type="button" data-act="inst-formcancel">取消</button></div></form>`;
+      `<p class="ledger__error" data-acc-error role="alert"></p><div class="ledger__actions"><span class="ledger__hw"><button class="ledger__btn ledger__btn--primary" type="submit">儲存</button><label class="ledger__hpad" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label></span><button class="ledger__btn" type="button" data-act="inst-formcancel">取消</button></div></form>`;
   }
   function instDetail(p) {
     const done = instDone(p), conf = new Set(state.transactions.filter(t => t.installId === p.id).map(t => t.idx)), t0 = midnight(), left = p.periods - done.size;
     const rows = Array.from({ length: p.periods }, (_, k) => {
       const d = instDate(p, k), isDone = done.has(k), due = !isDone && d <= t0;
-      const st = isDone ? (conf.has(k) ? '已記帳' : '先前已繳') : due ? `<button class="ledger__pay" type="button" data-act="inst-confirm" data-id="${esc(p.id)}" data-idx="${k}">確認</button>` : '尚未到期';
+      const st = isDone ? (conf.has(k) ? '已記帳' : '先前已繳') : due ? `<span class="ledger__hw"><button class="ledger__pay" type="button" data-act="inst-confirm" data-id="${esc(p.id)}" data-idx="${k}">確認</button><label class="ledger__hpad" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label></span>` : '尚未到期';
       return `<li><time>${dstr(d).slice(2)}</time><span class="ledger__muted">第 ${k + 1}/${p.periods} 期 · ${st}</span><span class="ledger__num${isDone ? ' is-transfer' : ''}">${money(p.amount)}</span></li>`;
     }).join('');
     return `<div class="ledger__sec-head"><button class="ledger__link" type="button" data-act="inst-back">‹ 貸款</button><span class="ledger__links"><button class="ledger__link" type="button" data-act="inst-edit" data-id="${esc(p.id)}">編輯</button><button class="ledger__link ledger__link--danger" type="button" data-act="inst-del" data-id="${esc(p.id)}">刪除</button></span></div>` +
@@ -829,12 +827,12 @@ export function createLedger(root, options = {}) {
       `<div class="ledger__sec-head"><h3>往來對象</h3><button class="ledger__link" type="button" data-act="ppl-add">新增對象</button></div>${pplForm === 'new' ? pplFormHtml('', '') : ''}${list}`;
   }
   function pplFormHtml(id, name) {
-    return `<form class="ledger__catadd" data-form="person" data-id="${esc(id)}" novalidate><input name="pname" type="text" maxlength="20" value="${esc(name)}" placeholder="對象名稱（家人、朋友、公司…）" aria-label="對象名稱" autocomplete="off"><button class="ledger__btn ledger__btn--primary" type="submit">${id ? '儲存' : '新增'}</button><button class="ledger__btn" type="button" data-act="ppl-formcancel">取消</button></form><p class="ledger__error" data-ppl-error role="alert"></p>`;
+    return `<form class="ledger__catadd" data-form="person" data-id="${esc(id)}" novalidate><input name="pname" type="text" maxlength="20" value="${esc(name)}" placeholder="對象名稱（家人、朋友、公司…）" aria-label="對象名稱" autocomplete="off"><span class="ledger__hw"><button class="ledger__btn ledger__btn--primary" type="submit">${id ? '儲存' : '新增'}</button><label class="ledger__hpad" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label></span><button class="ledger__btn" type="button" data-act="ppl-formcancel">取消</button></form><p class="ledger__error" data-ppl-error role="alert"></p>`;
   }
   function personDetail(p) {
     const b = personBal(p.id), tx = state.transactions.filter(t => t.personId === p.id).sort((x, y) => y.date.localeCompare(x.date) || (y.time || '').localeCompare(x.time || '') || (y.createdAt || 0) - (x.createdAt || 0));
     const status = b > 0 ? `對方欠我 <b>${money(b)}</b>` : b < 0 ? `我欠對方 <b>${money(-b)}</b>` : '已結清';
-    const btn = (kind, label, primary) => `<button type="button" class="ledger__btn${primary ? ' ledger__btn--primary' : ''}" data-act="ppl-act" data-kind="${kind}" data-id="${esc(p.id)}">${label}</button>`;
+    const btn = (kind, label, primary) => `<span class="ledger__hw"><button type="button" class="ledger__btn${primary ? ' ledger__btn--primary' : ''}" data-act="ppl-act" data-kind="${kind}" data-id="${esc(p.id)}">${label}</button><label class="ledger__hpad" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label></span>`;
     return `<div class="ledger__sec-head"><button class="ledger__link" type="button" data-act="ppl-back">‹ 往來</button><span class="ledger__links"><button class="ledger__link" type="button" data-act="ppl-rename" data-id="${esc(p.id)}">改名</button>` +
       `<button class="ledger__link ledger__link--danger" type="button" data-act="ppl-del" data-id="${esc(p.id)}">刪除</button></span></div>` +
       `${pplForm === p.id ? pplFormHtml(p.id, p.name) : ''}<div class="ledger__person"><h3>${esc(p.name)}</h3><p class="ledger__status">${status}</p>` +
@@ -843,7 +841,7 @@ export function createLedger(root, options = {}) {
       `<div class="ledger__sec-head"><h3>往來記錄</h3><small class="ledger__muted">${tx.length} 筆</small></div>` +
       (tx.length ? `<ul>${tx.map(t => `<li class="ledger__tx"><time>${t.date.slice(2).replaceAll('-', '/')}${t.time ? `<small>${t.time}</small>` : ''}</time>` +
         `<button type="button" class="ledger__tx-main" data-act="edit" data-id="${esc(t.id)}"><span>${DEBT[t.type]}</span><small class="ledger__muted">${esc(accName(t.accountId))}${t.note ? ' · ' + esc(t.note) : ''}</small></button>` +
-        `<span class="ledger__num is-transfer">${money(t.amount)}</span><button class="ledger__x" type="button" data-act="remove" data-id="${esc(t.id)}" aria-label="刪除">×</button></li>`).join('')}</ul>` : '<p class="ledger__empty">還沒有記錄。</p>');
+        `<span class="ledger__num is-transfer">${money(t.amount)}</span><span class="ledger__hw"><button class="ledger__x" type="button" data-act="remove" data-id="${esc(t.id)}" aria-label="刪除">×</button><label class="ledger__hpad" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label></span></li>`).join('')}</ul>` : '<p class="ledger__empty">還沒有記錄。</p>');
   }
 
   function update() {
@@ -1084,8 +1082,15 @@ export function createLedger(root, options = {}) {
     }
   };
   const onType = e => {
-    // 「新增記錄」按鈕上蓋了一層透明的 iOS 開關：手指按到它時 iPhone 會震一下，再由這裡送出表單
-    if (e.target.closest('[data-r="hpad"]')) { nativeTap = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent)); $('form').requestSubmit($('submit')); nativeTap = false; return; }
+    // 常按的按鈕上蓋了一層透明的 iOS 開關（.ledger__hpad），備註標籤本身也是開關：
+    // 新版 iOS 只有手指真的按到開關才會震，所以由這裡接手，再去送出表單或按下原本的按鈕
+    const pad = e.target.closest('.ledger__hpad, .ledger__chip');
+    if (pad) {
+      nativeTap = IOS;
+      if (pad.matches('.ledger__chip')) { if (!skipClick) { $('form').note.value = pad.dataset.note; renderNoteChips(); } }
+      else { const btn = pad.previousElementSibling; if (btn?.type === 'submit') btn.form.requestSubmit(btn); else btn?.click(); }
+      nativeTap = false; return;
+    }
     if (e.target.name === 'category' && e.target.value !== '__new__') lastCat = e.target.value;
     if (e.target.matches('[data-pdue]')) { try { setPersonDue(e.target.dataset.pdue, e.target.value); } catch (err) { alert(err.message); } return; }
     if (e.target.name === 'person' && e.target.value !== '__new__') lastPerson = e.target.value;
