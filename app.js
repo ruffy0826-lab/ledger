@@ -220,4 +220,12 @@ $('#y2k').onchange = e => { look.y2k = e.target.checked; applyLook(); };
 applyLook();
 
 // ---------- 離線 ----------
-if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js'));
+// 有新版就自動套用：App 從背景切回來時也檢查一次；新版接手後自動重新整理（只在原本已經有舊版時才重整，第一次安裝不會）
+if ('serviceWorker' in navigator) {
+  const hadSW = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadSW && !reloaded) { reloaded = true; location.reload(); } });
+  addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').then(reg => {
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+  }));
+}
