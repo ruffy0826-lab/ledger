@@ -109,6 +109,7 @@ const SKELETON = `
     <h2 data-r="month"></h2>
     <button class="ledger__nav" type="button" data-act="next" aria-label="下個月">›</button>
   </header>
+  <div class="ledger__cal" data-r="cal"></div>
   <dl class="ledger__sum" data-r="summary"></dl>
   <div class="ledger__alerts" data-r="alerts" role="status"></div>
   <section class="ledger__pending" data-r="pending"></section>
@@ -606,6 +607,21 @@ export function createLedger(root, options = {}) {
     $('cats').innerHTML = `<div class="ledger__sec-head"><h3>支出分類</h3>${editing ? '' : '<span class="ledger__links"><button class="ledger__link" type="button" data-act="catmgr-open">管理分類</button><button class="ledger__link" type="button" data-act="budget-edit">設定預算</button></span>'}</div>${body}`;
   }
 
+  // 月曆：選日期＝把記帳表單的日期改成那天；有記錄的日子下面有小點
+  function renderCal() {
+    const [y, m] = month.split('-').map(Number), first = new Date(y, m - 1, 1), sel = $('form').date.value, now = today();
+    const days = new Set(state.transactions.map(t => t.date));
+    const weeks = Math.ceil((first.getDay() + new Date(y, m, 0).getDate()) / 7);
+    let cells = '';
+    for (let i = 0; i < weeks * 7; i++) {
+      const d = new Date(y, m - 1, 1 - first.getDay() + i), k = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, w = d.getDay();
+      const cls = ['ledger__cday', w === 0 ? 'is-sun' : w === 6 ? 'is-sat' : '', d.getMonth() !== m - 1 ? 'is-out' : '', k === now ? 'is-today' : '', k === sel ? 'is-sel' : '', days.has(k) ? 'has-tx' : ''].filter(Boolean).join(' ');
+      const label = d.getDate() === 1 ? `<small>${d.getMonth() + 1}月</small>` : pad(d.getDate());
+      cells += `<button type="button" class="${cls}" data-act="cal-day" data-day="${k}" aria-label="${d.getMonth() + 1}月${d.getDate()}日 週${'日一二三四五六'[w]}"${k === sel ? ' aria-current="date"' : ''}><span>${label}</span></button>`;
+    }
+    $('cal').innerHTML = `<div class="ledger__cweek">${[...'日一二三四五六'].map((c, i) => `<span class="${i === 0 ? 'is-sun' : i === 6 ? 'is-sat' : ''}">週${c}</span>`).join('')}</div><div class="ledger__cgrid">${cells}</div>`;
+  }
+
   function renderDaily() {
     const [y, m] = month.split('-').map(Number), days = new Date(y, m, 0).getDate();
     const v = Array(days).fill(0);
@@ -849,7 +865,7 @@ export function createLedger(root, options = {}) {
     fillAccounts();
     if (type === 'expense' || type === 'income') fillCats();
     if (type === 'debt') fillPeople();
-    renderSummary(); renderAlerts(); renderPending(); renderCats(); renderDaily(); renderList(); renderAccounts(); renderNoteChips();
+    renderCal(); renderSummary(); renderAlerts(); renderPending(); renderCats(); renderDaily(); renderList(); renderAccounts(); renderNoteChips();
     root.querySelectorAll('[data-pct]').forEach(el => { el.style.width = el.dataset.pct + '%'; });
   }
 
@@ -903,7 +919,7 @@ export function createLedger(root, options = {}) {
       f.category.value = t.category;
     }
     f.account.value = t.accountId; if (t.toAccountId) f.toAccount.value = t.toAccountId;
-    f.amount.value = t.amount; f.date.value = t.date; f.time.value = t.time || ''; f.note.value = t.note || '';
+    f.amount.value = t.amount; f.date.value = t.date; f.time.value = t.time || ''; f.note.value = t.note || ''; renderCal();
     $('submit').textContent = '儲存修改'; $('cancel').hidden = false; f.classList.add('is-editing'); renderNoteChips();
     showError(''); f.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }
@@ -923,7 +939,7 @@ export function createLedger(root, options = {}) {
     type = 'transfer'; f.querySelector('input[name="type"][value="transfer"]').checked = true; syncForm();
     f.account.value = from.id; f.toAccount.value = card.id;
     const c = cardInfo(card), amt = c.remaining > 0 ? c.remaining : c.owed;   // 有帳單就預設繳上期帳單，否則繳全部欠款
-    f.amount.value = amt > 0 && !masked ? amt : ''; f.date.value = today(); f.time.value = nowTime(); f.note.value = '信用卡繳款'; showError('');
+    f.amount.value = amt > 0 && !masked ? amt : ''; f.date.value = today(); f.time.value = nowTime(); f.note.value = '信用卡繳款'; showError(''); renderCal();
     root.dispatchEvent(new CustomEvent('ledger:goto', { detail: 'records' }));   // 請外層切到「記帳」分頁
     f.amount.focus();
   }
@@ -937,12 +953,13 @@ export function createLedger(root, options = {}) {
     f.debtKind.value = kind; syncForm(); fillPeople(personId); f.account.value = acc.id;
     const b = Math.abs(personBal(personId));
     f.amount.value = (kind === 'collect' || kind === 'payback') && b && !masked ? b : '';
-    f.date.value = today(); f.time.value = nowTime(); f.note.value = ''; showError(''); renderNoteChips();
+    f.date.value = today(); f.time.value = nowTime(); f.note.value = ''; showError(''); renderNoteChips(); renderCal();
     root.dispatchEvent(new CustomEvent('ledger:goto', { detail: 'records' }));
     f.amount.focus();
   }
 
   // ---------- 事件 ----------
+  let skipCal = false;
   const onClick = e => {
     const b = e.target.closest('[data-act]');
     if (!b) return;
@@ -951,6 +968,11 @@ export function createLedger(root, options = {}) {
     if (act === 'prev' || act === 'next') {
       const [y, m] = month.split('-').map(Number), d = new Date(y, m - 1 + (act === 'next' ? 1 : -1), 1);
       setMonth(`${d.getFullYear()}-${pad(d.getMonth() + 1)}`);
+    } else if (act === 'cal-day') {
+      if (skipCal) return;
+      const f = $('form'), k = b.dataset.day;
+      f.date.value = k; haptic();
+      if (k.slice(0, 7) !== month) setMonth(k.slice(0, 7)); else renderCal();
     } else if (act === 'note-pick') {
       if (skipClick) return;
       $('form').note.value = b.dataset.note; haptic(); renderNoteChips();
@@ -1091,6 +1113,7 @@ export function createLedger(root, options = {}) {
       else { const btn = pad.previousElementSibling; if (btn?.type === 'submit') btn.form.requestSubmit(btn); else btn?.click(); }
       nativeTap = false; return;
     }
+    if (e.target.name === 'date' && e.target.form?.matches('[data-form="entry"]')) { const k = e.target.value; if (k && k.slice(0, 7) !== month) setMonth(k.slice(0, 7)); else renderCal(); return; }
     if (e.target.name === 'category' && e.target.value !== '__new__') lastCat = e.target.value;
     if (e.target.matches('[data-pdue]')) { try { setPersonDue(e.target.dataset.pdue, e.target.value); } catch (err) { alert(err.message); } return; }
     if (e.target.name === 'person' && e.target.value !== '__new__') lastPerson = e.target.value;
@@ -1118,6 +1141,14 @@ export function createLedger(root, options = {}) {
   root.addEventListener('pointerup', pressEnd);
   root.addEventListener('pointercancel', pressEnd);
   root.addEventListener('contextmenu', onCtx);
+  { // 月曆左右滑換月
+    let sx = 0, sy = 0;
+    $('cal').addEventListener('touchstart', e => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, { passive: true });
+    $('cal').addEventListener('touchend', e => {
+      const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) { const [y, m] = month.split('-').map(Number), d = new Date(y, m - 1 + (dx < 0 ? 1 : -1), 1); skipCal = true; setTimeout(() => { skipCal = false; }, 400); setMonth(`${d.getFullYear()}-${pad(d.getMonth() + 1)}`); }
+    }, { passive: true });
+  }
   root.addEventListener('change', onType);
   root.addEventListener('input', onInput);
 

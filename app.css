@@ -417,3 +417,19 @@ html.dp-lock, html.dp-lock body { overflow: hidden; }
 .dp__btn { flex: 1; min-height: 46px; border: 0; border-radius: 12px; background: var(--fill); color: var(--text); font-size: 17px; }
 .dp__btn[data-dp="pick-today"] { background: var(--blue); color: var(--on-blue); font-weight: 500; }
 @media (prefers-reduced-motion: reduce) { .dp__panel, .dp__backdrop { transition: none; } .dp__grid.is-l, .dp__grid.is-r { animation: none; } }
+
+/* ---------- 首頁月曆（記帳頁，月份下方） ---------- */
+body[data-tab="accounts"] .ledger__cal { display: none; }
+.ledger__cal { margin: 6px 0 4px; }
+.ledger__cweek, .ledger__cgrid { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; }
+.ledger__cweek span { padding: 4px 0 6px; font-size: 13px; color: var(--text); }
+.ledger__cal .is-sun { color: var(--red); } .ledger__cal .is-sat { color: var(--green); }
+.ledger__cday { position: relative; display: grid; place-items: center; height: 46px; padding: 0; border: 0; background: none; color: var(--text);
+  font: inherit; font-size: 18px; font-variant-numeric: tabular-nums; -webkit-tap-highlight-color: transparent; cursor: pointer; }
+.ledger__cday span { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; border: 2px solid transparent; transition: background .12s, border-color .12s; }
+.ledger__cday small { font-size: 14px; }
+.ledger__cday.is-out { opacity: .3; }
+.ledger__cday.is-today span { background: var(--fill); font-weight: 600; }
+.ledger__cday.is-sel span { border-color: var(--blue); font-weight: 600; }
+.ledger__cday:active span { background: var(--fill); }
+.ledger__cday.has-tx::after { content: ""; position: absolute; bottom: 3px; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--sub); opacity: .8; }
