@@ -151,6 +151,55 @@ body[data-tab="analysis"] #analysis { display: block; }
 .an-nb { white-space: nowrap; font-weight: inherit; }
 .an-kpi-note { margin: -4px 4px 16px; }
 
+/* v5：分析頁明細（可點月份、可展開分類、表格） */
+[data-mon], [data-cat] { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.an-svg .an-hit { fill: transparent; }
+.an-svg .an-grid { stroke: var(--sep); stroke-dasharray: 2 3; }
+.an-svg .is-dim { opacity: .35; }
+.an-svg text.is-sel { fill: var(--text); font-weight: 600; }
+.an-svg .an-val { fill: var(--text); font-size: 11px; font-weight: 600; }
+.an-pos { color: var(--green); }
+.an-center { text-align: center; margin: -4px 0 8px; }
+.an-sub { margin: 16px 0 4px; color: var(--sub); font-size: 13px; letter-spacing: .04em; }
+.an-detail { margin-top: 14px; padding-top: 14px; border-top: .5px solid var(--sep); }
+.an-detail-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.an-detail-head b { font-weight: 500; font-size: 17px; }
+.an-detail-head small, .an-row small, .an-list small, .an-tbl small { color: var(--sub); font-size: 11px; }
+.an-dl { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; margin: 12px 0 0; }
+.an-dl div { min-width: 0; }
+.an-dl dt { color: var(--sub); font-size: 12px; }
+.an-dl dd { margin: 2px 0 0; font-size: 17px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.an-top { margin: 0; padding: 0; list-style: none; counter-reset: t; }
+.an-top li { display: flex; justify-content: space-between; gap: 8px; min-height: 34px; align-items: center; counter-increment: t; border-bottom: .5px solid var(--sep); }
+.an-top li:last-child { border-bottom: 0; }
+.an-top li > span:first-child::before { content: counter(t); display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 8px; border-radius: 50%; background: var(--fill); color: var(--sub); font-size: 11px; }
+.an-tblwrap { overflow-x: auto; margin: 0 -4px; }
+.an-tbl { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.an-tbl th, .an-tbl td { padding: 9px 4px; text-align: right; white-space: nowrap; border-bottom: .5px solid var(--sep); }
+.an-tbl th:first-child { text-align: left; font-weight: 400; }
+.an-tbl small { display: block; }
+.an-tbl thead th { color: var(--sub); font-size: 12px; font-weight: 400; }
+.an-tbl tbody tr.is-sel { background: var(--fill); }
+.an-tbl tbody tr.is-sel th { font-weight: 600; }
+.an-tbl tfoot th, .an-tbl tfoot td { border-bottom: 0; font-weight: 500; }
+.an-tbl tfoot tr:first-child > * { border-top: 1px solid var(--sub); }
+.an-cats > li { display: block; min-height: 0; }
+.an-cats > li > button { display: grid; grid-template-columns: 14px 1fr auto auto 14px; gap: 8px; align-items: center; width: 100%; min-height: 44px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; }
+.an-chev { width: 14px; height: 14px; fill: none; stroke: var(--sub); stroke-width: 2; transition: transform .2s; }
+.an-cats > li.is-open .an-chev { transform: rotate(90deg); }
+.an-catdetail { margin: 0 0 14px; padding: 4px 12px 12px; border-radius: 12px; background: var(--fill); }
+.an-catdetail .an-list li { border-color: var(--sep); }
+.an-cmphead { display: grid; grid-template-columns: 1fr auto auto 4.5rem; gap: 8px; color: var(--sub); font-size: 12px; padding-bottom: 4px; }
+.an-cmphead span:not(:first-child) { text-align: right; min-width: 4.5rem; }
+.an-list.an-cmp4 li { grid-template-columns: 1fr auto auto 4.5rem; }
+.an-list.an-cmp4 .an-amt { min-width: 4.5rem; text-align: right; }
+.an-list li > span small { display: block; }
+.an-list.an-big li { grid-template-columns: 1fr auto; padding: 6px 0; }
+.an-big-l { display: grid; min-width: 0; } .an-big-l > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.an-row > span:first-child small { display: block; line-height: 1.1; }
+.an-rows-wide .an-row { grid-template-columns: 5.5rem 1fr 5.5rem; }
+.an-rows-wide .an-row > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* v4：信用卡額度與帳單週期 */
 .ledger__cc { padding: 8px 0 12px; border-bottom: .5px solid var(--sep); }
 .ledger__acclist li.ledger__cc:last-child { border-bottom: 0; }
