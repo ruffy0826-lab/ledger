@@ -382,3 +382,38 @@ body:is(.is-hearts, .is-stars, .is-y2k) .tabbar button[aria-current="true"] { co
 .ledger__hpad input, .ledger__chip input { position: absolute; top: 50%; left: 50%; width: 1px; height: 1px; margin: 0; opacity: .01; pointer-events: none; }
 .ledger__hw:active > button { transform: scale(.97); }
 .ledger__chip { position: relative; display: inline-flex; align-items: center; }
+
+/* ---------- 月曆日期選擇器（datepicker.js） ---------- */
+.ledger input[type=date] { pointer-events: none; }
+.ledger__field:has(input[type=date]) { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+html.dp-lock, html.dp-lock body { overflow: hidden; }
+.dp { position: fixed; inset: 0; z-index: 100; }
+.dp__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.35); opacity: 0; transition: opacity .22s; }
+.dp__panel { position: absolute; left: 0; right: 0; bottom: 0; max-width: 520px; margin: 0 auto; padding: 6px 14px calc(14px + env(safe-area-inset-bottom));
+  background: var(--card); color: var(--text); border-radius: 22px 22px 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.18);
+  transform: translateY(100%); transition: transform .26s cubic-bezier(.2,.8,.2,1); touch-action: pan-y; }
+.dp.is-on .dp__backdrop { opacity: 1; }
+.dp.is-on .dp__panel { transform: none; }
+.dp__grab { width: 40px; height: 5px; margin: 4px auto 10px; border-radius: 3px; background: var(--sep); box-shadow: 0 0 0 10px transparent; }
+.dp__head { display: grid; grid-template-columns: 48px 1fr 48px; align-items: center; margin-bottom: 10px; }
+.dp__round { width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--fill); color: var(--text); font-size: 26px; line-height: 1; }
+.dp__title { border: 0; background: none; color: var(--text); font-size: 26px; font-weight: 600; letter-spacing: .02em; font-variant-numeric: tabular-nums; min-height: 44px; }
+.dp__week, .dp__grid { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; }
+.dp__week span { padding: 6px 0 8px; font-size: 14px; color: var(--text); }
+.dp__week .is-sun { color: var(--red); } .dp__week .is-sat { color: var(--green); }
+.dp__day { display: grid; place-items: center; height: 50px; padding: 0; border: 0; background: none; color: var(--text);
+  font-size: 19px; font-variant-numeric: tabular-nums; -webkit-tap-highlight-color: transparent; }
+.dp__day span { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; border: 2px solid transparent; transition: background .12s, border-color .12s; }
+.dp__day.is-sun { color: var(--red); } .dp__day.is-sat { color: var(--green); }
+.dp__day.is-out { opacity: .32; }
+.dp__day small { font-size: 16px; }
+.dp__day.is-today span { background: var(--fill); font-weight: 600; }
+.dp__day.is-sel span { border-color: var(--blue); background: color-mix(in srgb, var(--blue) 14%, transparent); font-weight: 600; }
+.dp__day:active span { background: var(--fill); }
+.dp__grid.is-l { animation: dp-l .22s ease-out; } .dp__grid.is-r { animation: dp-r .22s ease-out; }
+@keyframes dp-l { from { opacity: 0; transform: translateX(24px); } }
+@keyframes dp-r { from { opacity: 0; transform: translateX(-24px); } }
+.dp__foot { display: flex; gap: 10px; margin-top: 10px; }
+.dp__btn { flex: 1; min-height: 46px; border: 0; border-radius: 12px; background: var(--fill); color: var(--text); font-size: 17px; }
+.dp__btn[data-dp="pick-today"] { background: var(--blue); color: var(--on-blue); font-weight: 500; }
+@media (prefers-reduced-motion: reduce) { .dp__panel, .dp__backdrop { transition: none; } .dp__grid.is-l, .dp__grid.is-r { animation: none; } }

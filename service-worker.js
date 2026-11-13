@@ -1,6 +1,6 @@
 // 改動任何檔案後重新部署時，把版本號 +1，舊快取會自動清掉
-const CACHE = 'ledger-v27';
-const ASSETS = ['./', './index.html', './app.css', './ledger.css', './ledger.js', './analysis.js', './app.js', './manifest.json',
+const CACHE = 'ledger-v28';
+const ASSETS = ['./', './index.html', './app.css', './ledger.css', './ledger.js', './analysis.js', './app.js', './datepicker.js', './manifest.json',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {

@@ -1,5 +1,6 @@
 import { createLedger } from './ledger.js';
 import { mountAnalysis } from './analysis.js';
+import { initDatePicker } from './datepicker.js';
 
 const SCHEMA = 5;          // 備份檔／資料格式版本。改動資料結構時 +1，並在 migrations 補上升級函式
 const REMIND_DAYS = 7;     // 超過幾天沒備份就提醒
@@ -70,6 +71,7 @@ const PREF_KEY = 'ledger:prefs', prefs = { hide: false, hideOnStart: false, hide
 try { Object.assign(prefs, JSON.parse(localStorage.getItem(PREF_KEY))); } catch {}
 let hidden = prefs.hideOnStart || prefs.hide;
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify({ ...prefs, hide: hidden })); } catch {} };
+initDatePicker();
 const ledger = createLedger($('#app'), { storage, masked: hidden, onReady: refresh, onChange: refresh });
 navigator.storage?.persist?.();   // 請瀏覽器把資料標為「不要自動清除」
 
