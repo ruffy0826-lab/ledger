@@ -433,3 +433,12 @@ body[data-tab="accounts"] .ledger__cal { display: none; }
 .ledger__cday.is-sel span { border-color: var(--blue); font-weight: 600; }
 .ledger__cday:active span { background: var(--fill); }
 .ledger__cday.has-tx::after { content: ""; position: absolute; bottom: 3px; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--sub); opacity: .8; }
+
+/* 每週備份提醒視窗 */
+#backup-ask { width: min(340px, calc(100% - 48px)); padding: 24px 20px 16px; border: 0; border-radius: 20px; background: var(--card); color: var(--text); text-align: center; }
+#backup-ask::backdrop { background: rgba(0,0,0,.5); }
+#backup-ask h2 { margin: 0 0 8px; font-size: 19px; font-weight: 600; }
+#backup-ask p { margin: 0 0 20px; color: var(--sub); font-size: 15px; line-height: 1.5; }
+#backup-ask button { display: block; width: 100%; min-height: 48px; border: 0; border-radius: 12px; font: inherit; font-size: 17px; cursor: pointer; }
+#backup-ask .ba-go { background: var(--blue); color: var(--on-blue); font-weight: 500; }
+#backup-ask .ba-later { margin-top: 6px; background: none; color: var(--sub); }

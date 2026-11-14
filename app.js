@@ -94,7 +94,28 @@ async function refresh() {
   $('#stat-backup').textContent = last ? fmt(last) : '尚未備份';
   $('#banner').hidden = !(n > 0 && days >= REMIND_DAYS);
   $('#banner-text').textContent = last ? `已 ${Math.floor(days)} 天沒有備份` : '你還沒有備份過資料';
+  maybeAskBackup(n, last, days);
 }
+
+// ---------- 每週備份提醒視窗 ----------
+// iPhone 的網頁 App 關著時不能自己跑，存檔也一定要使用者按一下，
+// 所以改成：打開（或切回）App 時，超過 REMIND_DAYS 天沒備份就跳出視窗，按一下就存。
+// 按「稍後」之後 ASK_AGAIN_HOURS 小時內不會再跳（上方的橫幅還是會在）。
+const ASK_AGAIN_HOURS = 12;
+let askedAt = 0;
+const askDlg = $('#backup-ask');
+function maybeAskBackup(n, last, days) {
+  if (!(n > 0 && days >= REMIND_DAYS) || askDlg.open || document.hidden) return;
+  if (Date.now() - askedAt < ASK_AGAIN_HOURS * 36e5) return;
+  askedAt = Date.now();
+  $('#backup-ask-text').textContent = last
+    ? `距離上次備份已經 ${Math.floor(days)} 天了。按「立即備份」後選「儲存到檔案」，存到 iCloud 雲碟就完成。`
+    : '你還沒有備份過資料。按「立即備份」後選「儲存到檔案」，存到 iCloud 雲碟就完成。';
+  if (askDlg.showModal) askDlg.showModal(); else askDlg.setAttribute('open', '');
+}
+$('#backup-ask-go').onclick = async () => { askDlg.close(); await exportJSON(); };
+$('#backup-ask-later').onclick = () => askDlg.close();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 
 // ---------- 匯出 ----------
 const stamp = () => { const d = new Date(), p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`; };
