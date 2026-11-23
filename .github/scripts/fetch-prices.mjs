@@ -5,18 +5,21 @@ import { writeFileSync } from 'node:fs';
 const UA = { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36', Accept: 'application/json, text/plain, */*' };
 const num = v => { const n = Number(String(v ?? '').replace(/[$,\s]/g, '')); return Number.isFinite(n) && n > 0 ? n : null; };
 const r4 = n => Math.round(n * 10000) / 10000;
-async function getJSON(url, tries = 3) {
+async function getText(url, tries = 3) {
   for (let i = 1; ; i++) {
     try {
       const res = await fetch(url, { headers: UA, signal: AbortSignal.timeout(30000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
+      return await res.text();
     } catch (e) {
       if (i >= tries) throw new Error(`${url}: ${e.message}`);
       await new Promise(r => setTimeout(r, 3000 * i));
     }
   }
 }
+const getJSON = async url => JSON.parse(await getText(url));
+// 簡易 CSV（支援雙引號欄位）
+const csv = t => t.split(/\r?\n/).filter(l => l.trim()).map(l => { const r = []; let cur = '', q = false; for (const ch of l) { if (ch === '"') q = !q; else if (ch === ',' && !q) { r.push(cur); cur = ''; } else cur += ch; } r.push(cur); return r.map(x => x.trim().replace(/^=/, '')); });
 // 在任意 JSON 裡找出「代號＋價格」的列
 function collect(node, out, codeKeys, priceKeys) {
   if (Array.isArray(node)) { for (const x of node) collect(x, out, codeKeys, priceKeys); return; }
@@ -40,10 +43,13 @@ await step('fx', async () => {
 await step('twse', async () => {
   let n = 0;
   try {
-    const j = await getJSON('https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL?response=json');
-    const f = j?.fields || [], ci = f.indexOf('證券代號'), pi = f.indexOf('收盤價');
-    for (const row of j?.data || []) { const p = num(row[pi >= 0 ? pi : 7]); if (p) { out.tw[String(row[ci >= 0 ? ci : 0]).trim().toUpperCase()] = p; n++; } }
-    out.twDate = j?.date || '';
+    const t = await getText('https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL?response=json');
+    let f, rows;
+    try { const j = JSON.parse(t); f = j.fields || []; rows = j.data || []; out.twDate = j.date || ''; }
+    catch { const all = csv(t), hi = all.findIndex(r => r.includes('證券代號')); f = all[hi] || []; rows = all.slice(hi + 1); }
+    const ci = f.indexOf('證券代號'), pi = f.indexOf('收盤價'), di = f.indexOf('日期');
+    if (ci < 0 || pi < 0) throw new Error('欄位不對：' + f.join(','));
+    for (const row of rows) { const p = num(row[pi]); if (p && row[ci]) { out.tw[String(row[ci]).trim().toUpperCase()] = p; n++; if (di >= 0 && !out.twDate) out.twDate = row[di]; } }
   } catch (e) { out.errors.push('twse-www: ' + e.message); }
   if (n < 500) collect(await getJSON('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'), out.tw, ['Code'], ['ClosingPrice']);
 });
@@ -55,14 +61,24 @@ await step('tpex', async () => {
 // 美股：Nasdaq 篩選器（NYSE、Nasdaq、AMEX 全部個股＋ETF），價格是美元
 const usd = {};
 await step('us-stocks', async () => collect(await getJSON('https://api.nasdaq.com/api/screener/stocks?tableonly=true&download=true'), usd, ['symbol'], ['lastsale', 'lastSalePrice']));
+// Nasdaq 的 ETF 清單從 GitHub 抓不到，改用 Yahoo 逐檔查常見美股 ETF（要加別的代號就加在這裡）
+const US_ETF = `VOO VTI SPY IVV QQQ QQQM VT VEA VWO VXUS BND BNDX AGG TLT IEF SHY SGOV BIL VGT XLK SMH SOXX SCHD VIG VYM DGRO JEPI JEPQ
+DIA IWM IJH IJR MDY VB VO VTV VUG IWF IWD SPLG SPYG SPYV SCHG SCHB SCHX SCHF RSP MTUM QUAL USMV XLF XLE XLV XLY XLP XLI XLU XLB XLRE XLC
+VNQ ARKK TQQQ SQQQ SOXL UPRO SSO QLD GLD IAU SLV GDX USO EFA EEM IEFA IEMG EWJ EWT EWY FXI MCHI INDA KWEB VGK VPL IBIT FBTC ETHA GBTC BITO
+LQD HYG JNK EMB MUB TIP VCIT VCSH VGIT VGSH VGLT BSV BIV BLV IGSB IGIB USHY SPHY SPTL SPTS EDV ZROO VXF VV MGK VOOG VOOV VBR VBK ESGU
+DGRW NOBL SDY HDV SPHD DVY FDVV COWZ AVUV AVDV DFAC DFUS DFAI IXUS ACWI URTH BOTZ ROBO ICLN TAN LIT HACK CIBR SKYY CLOU IGV FDN XBI IBB`.split(/\s+/).filter(Boolean);
 await step('us-etf', async () => {
-  for (const q of ['tableonly=true&limit=10000&offset=0', 'download=true', 'tableonly=true&download=true']) {
-    const j = await getJSON('https://api.nasdaq.com/api/screener/etf?' + q), before = Object.keys(usd).length;
-    collect(j, usd, ['symbol'], ['lastSalePrice', 'lastsale']);
-    const got = Object.keys(usd).length - before;
-    console.log('etf', q, got, got < 100 ? JSON.stringify(j).slice(0, 600) : '');
-    if (got >= 100) break;
+  const todo = US_ETF.filter(s => !(s in usd)); let got = 0;
+  for (let i = 0; i < todo.length; i += 8) {
+    await Promise.all(todo.slice(i, i + 8).map(async sym => {
+      try {
+        const j = await getJSON(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=1d`);
+        const p = num(j?.chart?.result?.[0]?.meta?.regularMarketPrice); if (p) { usd[sym] = p; got++; }
+      } catch {}
+    }));
   }
+  console.log('etf yahoo', got, '/', todo.length);
+  if (todo.length && !got) throw new Error('Yahoo 全部查不到');
 });
 for (const [k, v] of Object.entries(usd)) if (out.fx.USD) out.us[k.replace('/', '.')] = r4(v * out.fx.USD);
 
