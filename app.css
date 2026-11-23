@@ -105,7 +105,11 @@ body:not([data-tab="accounts"]) [data-r="accounts"] { display: none; }
 .ledger__acclist li:last-child { border-bottom: 0; }
 .ledger__acc-name { display: grid; min-width: 0; }
 .ledger__acc-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; padding: 20px; border-radius: 16px; background: var(--card); }
-.ledger__acc-form .ledger__field:first-child, .ledger__acc-form > :is(.ledger__error, .ledger__actions, .ledger__acc-credit) { grid-column: 1 / -1; }
+.ledger__acc-form .ledger__field:first-child, .ledger__acc-form > :is(.ledger__error, .ledger__actions, .ledger__acc-credit, .ledger__acc-invest) { grid-column: 1 / -1; }
+.ledger__acc-invest { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ledger__acc-invest .ledger__field--wide { grid-column: 1 / -1; }
+.ledger__pl.is-up { color: #d93a3a; }
+.ledger__pl.is-down { color: #1f9d55; }
 .ledger__acc-credit { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
 /* v3：搜尋與分析 */

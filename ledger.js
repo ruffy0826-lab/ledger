@@ -1,4 +1,4 @@
-/*! ledger.js v2 — 記帳模組：收入／支出／轉帳、多帳戶（現金・銀行・電子支付・信用卡）、時間、分類統計、每日圖表、每月預算 */
+/*! ledger.js v2 — 記帳模組：收入／支出／轉帳、多帳戶（現金・銀行・電子支付・投資・信用卡）、時間、分類統計、每日圖表、每月預算 */
 
 const pad = n => String(n).padStart(2, '0');
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
@@ -12,7 +12,7 @@ const localAdapter = key => ({
   save: s => localStorage.setItem(key, JSON.stringify(s)),
 });
 
-const KINDS = { cash: '現金', bank: '銀行', ewallet: '電子支付', credit: '信用卡' };
+const KINDS = { cash: '現金', bank: '銀行', ewallet: '電子支付', invest: '投資', credit: '信用卡' };
 // 往來：借出／代墊／收回／借入／還款。這些只是「錢在帳戶與對象之間移動」，不算收入或支出
 const DEBT = { lend: '借出', advance: '代墊', collect: '收回', borrow: '借入', payback: '還款' };
 const DEBT_OPT = { lend: '借錢給人', advance: '幫人代墊', collect: '對方還我', borrow: '向人借錢', payback: '我還款' };
@@ -340,8 +340,10 @@ export function createLedger(root, options = {}) {
     if (!name) throw new Error('請輸入帳戶名稱。');
     if (!KINDS[v.kind]) throw new Error('請選擇帳戶類型。');
     const day = x => { x = Math.round(Number(x)); return x >= 1 && x <= 31 ? x : 0; };
-    const credit = v.kind === 'credit';
+    const credit = v.kind === 'credit', invest = v.kind === 'invest';
+    const mv = invest && String(v.value ?? '').trim() !== '' && Number.isFinite(Number(v.value)) ? Math.max(0, round2(Number(v.value))) : null;
     const a = { id: id || uid(), name, kind: v.kind, opening: round2(Number(v.opening) || 0), statementDay: credit ? day(v.statementDay) : 0, dueDay: credit ? day(v.dueDay) : 0, limit: credit ? Math.max(0, round2(Number(v.limit) || 0)) : 0 };
+    if (invest) { a.value = mv; a.valueDate = mv === null ? '' : today(); }
     const i = state.accounts.findIndex(x => x.id === a.id);
     if (i < 0) state.accounts.push(a); else state.accounts[i] = a;
     accEdit = null; update(); persist();
@@ -716,26 +718,37 @@ export function createLedger(root, options = {}) {
 
   function renderAccounts() {
     const bal = state.accounts.map(a => ({ a, b: balanceOf(a) }));
-    const assets = round2(bal.filter(x => x.a.kind !== 'credit').reduce((s, x) => s + x.b, 0));
+    // 投資帳戶：有填「目前市值」就用市值算資產，沒填就用帳面餘額（投入本金）
+    const worth = x => (x.a.kind === 'invest' && Number.isFinite(x.a.value) ? x.a.value : x.b);
+    const assets = round2(bal.filter(x => x.a.kind !== 'credit').reduce((s, x) => s + worth(x), 0));
     const debt = round2(0 - bal.filter(x => x.a.kind === 'credit').reduce((s, x) => s + x.b, 0));
     const f = accEdit === 'new' ? { kind: 'bank' } : state.accounts.find(a => a.id === accEdit);
-    const credit = f?.kind === 'credit';
+    const credit = f?.kind === 'credit', invest = f?.kind === 'invest';
     const form = !f ? '' :
       `<form class="ledger__acc-form" data-form="account" data-id="${esc(f.id || '')}" novalidate>` +
       `<label class="ledger__field"><span>名稱</span><input name="accname" type="text" maxlength="20" value="${esc(f.name || '')}" placeholder="例如：國泰世華"></label>` +
       `<label class="ledger__field"><span>類型</span><select name="kind">${Object.entries(KINDS).map(([k, v]) => `<option value="${k}"${f.kind === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>` +
-      `<label class="ledger__field"><span data-r="openLabel">${credit ? '目前欠款' : '初始餘額'}</span><input name="opening" type="number" step="any" inputmode="decimal" value="${f.opening ? (credit ? -f.opening : f.opening) : ''}" placeholder="0"></label>` +
+      `<label class="ledger__field"><span data-r="openLabel">${credit ? '目前欠款' : invest ? '已投入本金' : '初始餘額'}</span><input name="opening" type="number" step="any" inputmode="decimal" value="${f.opening ? (credit ? -f.opening : f.opening) : ''}" placeholder="0"></label>` +
       `<div class="ledger__acc-credit" data-credit${credit ? '' : ' hidden'}>` +
       `<label class="ledger__field ledger__field--wide"><span>信用額度</span><input name="limit" type="number" min="0" step="any" inputmode="decimal" value="${f.limit || ''}" placeholder="例如 100000"></label>` +
       `<label class="ledger__field"><span>結帳日（每月）</span><input name="statementDay" type="number" min="1" max="31" inputmode="numeric" value="${f.statementDay || ''}"></label>` +
       `<label class="ledger__field"><span>繳款日（每月）</span><input name="dueDay" type="number" min="1" max="31" inputmode="numeric" value="${f.dueDay || ''}"></label></div>` +
+      `<div class="ledger__acc-invest" data-invest${invest ? '' : ' hidden'}>` +
+      `<label class="ledger__field ledger__field--wide"><span>目前市值（選填）</span><input name="mvalue" type="number" min="0" step="any" inputmode="decimal" value="${Number.isFinite(f.value) ? f.value : ''}" placeholder="證券 App 上的總市值"></label>` +
+      `<p class="ledger__hint ledger__field--wide">買進＝從銀行「轉帳」到這個帳戶，賣出＝轉回銀行；股利可記成收入。帳面餘額就是投入本金，填了市值就會算出損益，淨資產也改用市值計算。市值要自己定期更新。${Number.isFinite(f.value) && f.valueDate ? `上次更新：${esc(f.valueDate)}` : ''}</p></div>` +
       `<p class="ledger__error" data-acc-error role="alert"></p>` +
       `<div class="ledger__actions"><span class="ledger__hw"><button class="ledger__btn ledger__btn--primary" type="submit">儲存</button><label class="ledger__hpad" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label></span><button class="ledger__btn" type="button" data-act="acc-cancel">取消</button>` +
       `${f.id ? `<button class="ledger__btn ledger__btn--danger" type="button" data-act="acc-delete" data-id="${esc(f.id)}">刪除</button>` : ''}</div></form>`;
-    const groups = ['cash', 'bank', 'ewallet', 'credit'].map(k => {
+    const investRow = (a, b) => {
+      if (!Number.isFinite(a.value)) return `<li class="ledger__accrow"><button type="button" class="ledger__acc" data-act="acc-edit" data-id="${esc(a.id)}"><span class="ledger__acc-name">${esc(a.name)}<small class="ledger__muted">投入本金 · 未填市值</small></span><span class="ledger__num">${money(b)}</span></button></li>`;
+      const pl = round2(a.value - b), pct = b > 0 ? ` (${pl >= 0 ? '+' : ''}${(pl / b * 100).toFixed(1)}%)` : '';
+      const plTxt = masked ? '•••••' : `${pl >= 0 ? '+' : '−'}${nf.format(Math.abs(pl))}${pct}`;
+      return `<li class="ledger__accrow"><button type="button" class="ledger__acc" data-act="acc-edit" data-id="${esc(a.id)}"><span class="ledger__acc-name">${esc(a.name)}<small class="ledger__muted">本金 ${money(b)} · 損益 <span class="ledger__pl ${pl > 0 ? 'is-up' : pl < 0 ? 'is-down' : ''}">${plTxt}</span></small></span><span class="ledger__num">${money(a.value)}</span></button></li>`;
+    };
+    const groups = ['cash', 'bank', 'ewallet', 'invest', 'credit'].map(k => {
       const items = bal.filter(x => x.a.kind === k);
       if (!items.length) return '';
-      return `<h3 class="ledger__gt">${KINDS[k]}</h3><ul class="ledger__acclist">${items.map(({ a, b }) => k === 'credit' ? cardBlock(a) :
+      return `<h3 class="ledger__gt">${KINDS[k]}</h3><ul class="ledger__acclist">${items.map(({ a, b }) => k === 'credit' ? cardBlock(a) : k === 'invest' ? investRow(a, b) :
         `<li class="ledger__accrow"><button type="button" class="ledger__acc" data-act="acc-edit" data-id="${esc(a.id)}"><span class="ledger__acc-name">${esc(a.name)}</span><span class="ledger__num">${money(b)}</span></button></li>`).join('')}</ul>`;
     }).join('');
     const pb = state.people.map(p => personBal(p.id)), recv = round2(pb.filter(x => x > 0).reduce((s, x) => s + x, 0)), owe = round2(0 - pb.filter(x => x < 0).reduce((s, x) => s + x, 0));
@@ -1076,7 +1089,7 @@ export function createLedger(root, options = {}) {
       e.preventDefault();
       const credit = f.kind.value === 'credit', n = Number(f.opening.value) || 0;
       try {
-        saveAccount(f.dataset.id || null, { name: f.accname.value, kind: f.kind.value, opening: credit ? -Math.abs(n) : n, statementDay: f.statementDay.value, dueDay: f.dueDay.value, limit: f.limit.value });
+        saveAccount(f.dataset.id || null, { name: f.accname.value, kind: f.kind.value, opening: credit ? -Math.abs(n) : n, statementDay: f.statementDay.value, dueDay: f.dueDay.value, limit: f.limit.value, value: f.mvalue.value });
         feedback('帳戶已儲存');
       } catch (err) { f.querySelector('[data-acc-error]').textContent = err.message; }
     } else if (f.matches('[data-form="loan"]')) {
@@ -1128,7 +1141,8 @@ export function createLedger(root, options = {}) {
     else if (e.target.name === 'kind') {
       const f = e.target.form, c = e.target.value === 'credit';
       f.querySelector('[data-credit]').hidden = !c;
-      f.querySelector('[data-r="openLabel"]').textContent = c ? '目前欠款' : '初始餘額';
+      f.querySelector('[data-invest]').hidden = e.target.value !== 'invest';
+      f.querySelector('[data-r="openLabel"]').textContent = c ? '目前欠款' : e.target.value === 'invest' ? '已投入本金' : '初始餘額';
     }
     if (e.target.name === 'category' || e.target.name === 'person') renderNoteChips();
   };
