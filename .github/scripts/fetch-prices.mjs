@@ -36,14 +36,16 @@ await step('fx', async () => {
   out.fx.USD = twd;
 });
 
-// 台股上市
+// 台股上市：證交所網站的資料收盤後就更新（openapi 常慢一天，只當備援）
 await step('twse', async () => {
-  const before = Object.keys(out.tw).length;
-  try { collect(await getJSON('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'), out.tw, ['Code'], ['ClosingPrice']); } catch (e) { out.errors.push('twse-openapi: ' + e.message); }
-  if (Object.keys(out.tw).length - before < 500) {   // 備援：證交所網站
-    const j = await getJSON('https://www.twse.com.tw/exchangeReport/STOCK_DAY_ALL?response=json');
-    for (const row of j?.data || []) { const p = num(row[7]); if (p) out.tw[String(row[0]).trim().toUpperCase()] = p; }
-  }
+  let n = 0;
+  try {
+    const j = await getJSON('https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL?response=json');
+    const f = j?.fields || [], ci = f.indexOf('證券代號'), pi = f.indexOf('收盤價');
+    for (const row of j?.data || []) { const p = num(row[pi >= 0 ? pi : 7]); if (p) { out.tw[String(row[ci >= 0 ? ci : 0]).trim().toUpperCase()] = p; n++; } }
+    out.twDate = j?.date || '';
+  } catch (e) { out.errors.push('twse-www: ' + e.message); }
+  if (n < 500) collect(await getJSON('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'), out.tw, ['Code'], ['ClosingPrice']);
 });
 // 台股上櫃
 await step('tpex', async () => {
@@ -53,7 +55,11 @@ await step('tpex', async () => {
 // 美股：Nasdaq 篩選器（NYSE、Nasdaq、AMEX 全部個股＋ETF），價格是美元
 const usd = {};
 await step('us-stocks', async () => collect(await getJSON('https://api.nasdaq.com/api/screener/stocks?tableonly=true&download=true'), usd, ['symbol'], ['lastsale', 'lastSalePrice']));
-await step('us-etf', async () => collect(await getJSON('https://api.nasdaq.com/api/screener/etf?tableonly=true&download=true'), usd, ['symbol'], ['lastSalePrice', 'lastsale']));
+await step('us-etf', async () => {
+  const j = await getJSON('https://api.nasdaq.com/api/screener/etf?tableonly=true&download=true'), before = Object.keys(usd).length;
+  collect(j, usd, ['symbol'], ['lastSalePrice', 'lastsale']);
+  if (Object.keys(usd).length - before < 100) console.log('etf 格式', JSON.stringify(j).slice(0, 1500));
+});
 for (const [k, v] of Object.entries(usd)) if (out.fx.USD) out.us[k.replace('/', '.')] = r4(v * out.fx.USD);
 
 // 加密貨幣：CoinGecko 市值前 500 名，直接用台幣報價；同代號取市值較大的
