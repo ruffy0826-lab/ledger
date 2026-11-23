@@ -17,7 +17,7 @@ async function getText(url, tries = 3) {
     }
   }
 }
-const getJSON = async url => JSON.parse(await getText(url));
+const getJSON = async (url, tries) => JSON.parse(await getText(url, tries));
 // 簡易 CSV（支援雙引號欄位）
 const csv = t => t.split(/\r?\n/).filter(l => l.trim()).map(l => { const r = []; let cur = '', q = false; for (const ch of l) { if (ch === '"') q = !q; else if (ch === ',' && !q) { r.push(cur); cur = ''; } else cur += ch; } r.push(cur); return r.map(x => x.trim().replace(/^=/, '')); });
 // 在任意 JSON 裡找出「代號＋價格」的列
@@ -61,24 +61,34 @@ await step('tpex', async () => {
 // 美股：Nasdaq 篩選器（NYSE、Nasdaq、AMEX 全部個股＋ETF），價格是美元
 const usd = {};
 await step('us-stocks', async () => collect(await getJSON('https://api.nasdaq.com/api/screener/stocks?tableonly=true&download=true'), usd, ['symbol'], ['lastsale', 'lastSalePrice']));
-// Nasdaq 的 ETF 清單從 GitHub 抓不到，改用 Yahoo 逐檔查常見美股 ETF（要加別的代號就加在這裡）
+// Nasdaq 的 ETF 篩選器從 GitHub 抓不到，改成逐檔查常見美股 ETF（要加別的代號就加在這裡）
 const US_ETF = `VOO VTI SPY IVV QQQ QQQM VT VEA VWO VXUS BND BNDX AGG TLT IEF SHY SGOV BIL VGT XLK SMH SOXX SCHD VIG VYM DGRO JEPI JEPQ
 DIA IWM IJH IJR MDY VB VO VTV VUG IWF IWD SPLG SPYG SPYV SCHG SCHB SCHX SCHF RSP MTUM QUAL USMV XLF XLE XLV XLY XLP XLI XLU XLB XLRE XLC
 VNQ ARKK TQQQ SQQQ SOXL UPRO SSO QLD GLD IAU SLV GDX USO EFA EEM IEFA IEMG EWJ EWT EWY FXI MCHI INDA KWEB VGK VPL IBIT FBTC ETHA GBTC BITO
 LQD HYG JNK EMB MUB TIP VCIT VCSH VGIT VGSH VGLT BSV BIV BLV IGSB IGIB USHY SPHY SPTL SPTS EDV ZROO VXF VV MGK VOOG VOOV VBR VBK ESGU
 DGRW NOBL SDY HDV SPHD DVY FDVV COWZ AVUV AVDV DFAC DFUS DFAI IXUS ACWI URTH BOTZ ROBO ICLN TAN LIT HACK CIBR SKYY CLOU IGV FDN XBI IBB`.split(/\s+/).filter(Boolean);
 await step('us-etf', async () => {
-  const todo = US_ETF.filter(s => !(s in usd)); let got = 0;
-  for (let i = 0; i < todo.length; i += 8) {
-    await Promise.all(todo.slice(i, i + 8).map(async sym => {
+  let todo = US_ETF.filter(s => !(s in usd)); const n0 = todo.length;
+  // 1) Nasdaq 個別報價
+  for (let i = 0; i < todo.length; i += 6) {
+    await Promise.all(todo.slice(i, i + 6).map(async sym => {
       try {
-        const j = await getJSON(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=1d`);
-        const p = num(j?.chart?.result?.[0]?.meta?.regularMarketPrice); if (p) { usd[sym] = p; got++; }
+        const j = await getJSON(`https://api.nasdaq.com/api/quote/${encodeURIComponent(sym)}/info?assetclass=etf`, 1);
+        const p = num(j?.data?.primaryData?.lastSalePrice); if (p) usd[sym] = p;
       } catch {}
     }));
   }
-  console.log('etf yahoo', got, '/', todo.length);
-  if (todo.length && !got) throw new Error('Yahoo 全部查不到');
+  todo = todo.filter(s => !(s in usd)); const viaNasdaq = n0 - todo.length;
+  // 2) Stooq 批次 CSV 補漏
+  for (let i = 0; i < todo.length; i += 40) {
+    try {
+      const rows = csv(await getText(`https://stooq.com/q/l/?s=${todo.slice(i, i + 40).map(x => x.toLowerCase() + '.us').join(',')}&f=sc&h&e=csv`, 2));
+      for (const [sym, close] of rows.slice(1)) { const p = num(close); if (p) usd[sym.replace(/\.US$/i, '').toUpperCase()] = p; }
+    } catch (e) { console.log('stooq', e.message); }
+  }
+  const left = US_ETF.filter(s => !(s in usd));
+  console.log('etf nasdaq', viaNasdaq, 'stooq', n0 - viaNasdaq - left.length, '查不到', left.join(' '));
+  if (n0 && left.length === n0) throw new Error('ETF 全部查不到');
 });
 for (const [k, v] of Object.entries(usd)) if (out.fx.USD) out.us[k.replace('/', '.')] = r4(v * out.fx.USD);
 
