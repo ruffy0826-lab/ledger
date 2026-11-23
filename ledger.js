@@ -24,6 +24,18 @@ const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s || '');
 const int = (v, lo, hi, d = lo) => { v = Math.round(Number(v)); return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d; };
 const INFLOW = new Set(['income', 'collect', 'borrow']);   // 讓帳戶餘額增加的類型
 const TYPES = ['expense', 'income', 'transfer', ...Object.keys(DEBT)];
+// 投資持股：一行一檔「代號 數量」，例如「0050 570」「VOO 3」「BTC 0.05」
+// 美股和加密貨幣代號撞名時，前面加「美」或「幣」指定，例如「幣 SOL 2」
+const MKT_TAG = { 台: 'tw', 美: 'us', 幣: 'crypto' };
+const parseHoldings = text => String(text || '').split(/[\n,，;；]+/).map(x => x.trim()).filter(Boolean).map(line => {
+  const m = line.match(/^(?:([台美幣])\s*[:：]?\s*)?([0-9A-Za-z][0-9A-Za-z.\-]{0,11})\s*[ :：x×*]?\s*([\d,]*\.?\d+)\s*(?:股|顆|枚|單位)?$/);
+  const n = m ? Number(m[3].replaceAll(',', '')) : 0;
+  if (!m || !(n > 0)) throw new Error(`看不懂「${line}」，請寫成「代號 數量」，例如 0050 570、VOO 3、BTC 0.05`);
+  const h = { code: m[2].toUpperCase(), shares: n };
+  if (m[1]) h.mkt = MKT_TAG[m[1]];
+  return h;
+});
+const QUOTES_KEY = 'ledger:quotes';
 
 // 分類清單：去空白、去重複、限制長度；「轉帳」是系統保留名稱；每種至少留一個
 const cleanCats = (c, d) => {
@@ -164,6 +176,10 @@ export function createLedger(root, options = {}) {
     onReady: null,        // () => void，資料載入完成後呼叫
     onChange: null,       // (state) => void，每次存檔後呼叫
     onBudgetAlert: null,  // 新增支出讓預算變成 warn / over 時呼叫
+    priceUrl: (() => {    // 投資帳戶自動市值的價格檔
+      const h = location.hostname, r = location.pathname.split('/')[1];
+      return h.endsWith('.github.io') && r ? `https://raw.githubusercontent.com/${h.split('.')[0]}/${r}/prices/prices.json` : 'https://raw.githubusercontent.com/ruffy0826-lab/ledger/prices/prices.json';
+    })(),
     ...options,
     categories: {
       expense: ['餐飲', '交通', '購物', '居住', '娛樂', '醫療', '其他'],
@@ -175,6 +191,34 @@ export function createLedger(root, options = {}) {
   const nf = new Intl.NumberFormat(opt.locale, { style: 'currency', currency: opt.currency, minimumFractionDigits: 0, maximumFractionDigits: 2 });
   let masked = !!opt.masked;
   const money = n => (masked ? '•••••' : nf.format(n));
+  // 價格：GitHub Actions 每小時更新 prices 分支上的 prices.json（台股・美股收盤價、加密貨幣現價，全部已換成台幣）；離線時用上次抓到的
+  let quotes = (() => { try { return JSON.parse(localStorage.getItem(QUOTES_KEY)) || null; } catch { return null; } })();
+  let quotesAt = 0;
+  const loadQuotes = () => {
+    if (Date.now() - quotesAt < 5 * 60e3) return;
+    quotesAt = Date.now();
+    fetch(opt.priceUrl, { cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).then(q => {
+      if (!q?.updated || (quotes?.updated && quotes.updated >= q.updated)) return;
+      quotes = q; try { localStorage.setItem(QUOTES_KEY, JSON.stringify(q)); } catch {}
+      if (ready) update();
+    }).catch(() => {});
+  };
+  const priceOf = h => {
+    if (!quotes) return null;
+    const m = h.mkt || (/^\d/.test(h.code) ? 'tw' : null);
+    const p = m ? quotes[m]?.[h.code] : quotes.us?.[h.code] ?? quotes.crypto?.[h.code];
+    return p > 0 ? p : null;
+  };
+  // 有填持股就用「數量 × 最新價格」自動算市值；有任何一檔查不到價格就退回手動填的市值
+  const autoValue = a => {
+    if (!a.holdings?.length) return null;
+    let v = 0;
+    for (const h of a.holdings) { const p = priceOf(h); if (p === null) return null; v += h.shares * p; }
+    return round2(v);
+  };
+  const missing = a => (a.holdings || []).filter(h => priceOf(h) === null).map(h => h.code);
+  const stamp = iso => { const d = new Date(iso); return isNaN(d) ? '' : `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  const investValue = a => autoValue(a) ?? (Number.isFinite(a.value) ? a.value : null);
 
   let state = normalize(null, opt.categories);
   let month = today().slice(0, 7);
@@ -343,7 +387,11 @@ export function createLedger(root, options = {}) {
     const credit = v.kind === 'credit', invest = v.kind === 'invest';
     const mv = invest && String(v.value ?? '').trim() !== '' && Number.isFinite(Number(v.value)) ? Math.max(0, round2(Number(v.value))) : null;
     const a = { id: id || uid(), name, kind: v.kind, opening: round2(Number(v.opening) || 0), statementDay: credit ? day(v.statementDay) : 0, dueDay: credit ? day(v.dueDay) : 0, limit: credit ? Math.max(0, round2(Number(v.limit) || 0)) : 0 };
-    if (invest) { a.value = mv; a.valueDate = mv === null ? '' : today(); }
+    if (invest) {
+      a.holdings = parseHoldings(v.holdings);
+      const old = state.accounts.find(x => x.id === a.id);
+      a.value = mv; a.valueDate = mv === null ? '' : mv === old?.value ? old.valueDate || today() : today();
+    }
     const i = state.accounts.findIndex(x => x.id === a.id);
     if (i < 0) state.accounts.push(a); else state.accounts[i] = a;
     accEdit = null; update(); persist();
@@ -719,7 +767,7 @@ export function createLedger(root, options = {}) {
   function renderAccounts() {
     const bal = state.accounts.map(a => ({ a, b: balanceOf(a) }));
     // 投資帳戶：有填「目前市值」就用市值算資產，沒填就用帳面餘額（投入本金）
-    const worth = x => (x.a.kind === 'invest' && Number.isFinite(x.a.value) ? x.a.value : x.b);
+    const worth = x => (x.a.kind === 'invest' ? investValue(x.a) ?? x.b : x.b);
     const assets = round2(bal.filter(x => x.a.kind !== 'credit').reduce((s, x) => s + worth(x), 0));
     const debt = round2(0 - bal.filter(x => x.a.kind === 'credit').reduce((s, x) => s + x.b, 0));
     const f = accEdit === 'new' ? { kind: 'bank' } : state.accounts.find(a => a.id === accEdit);
@@ -734,16 +782,18 @@ export function createLedger(root, options = {}) {
       `<label class="ledger__field"><span>結帳日（每月）</span><input name="statementDay" type="number" min="1" max="31" inputmode="numeric" value="${f.statementDay || ''}"></label>` +
       `<label class="ledger__field"><span>繳款日（每月）</span><input name="dueDay" type="number" min="1" max="31" inputmode="numeric" value="${f.dueDay || ''}"></label></div>` +
       `<div class="ledger__acc-invest" data-invest${invest ? '' : ' hidden'}>` +
-      `<label class="ledger__field ledger__field--wide"><span>目前市值（選填）</span><input name="mvalue" type="number" min="0" step="any" inputmode="decimal" value="${Number.isFinite(f.value) ? f.value : ''}" placeholder="證券 App 上的總市值"></label>` +
-      `<p class="ledger__hint ledger__field--wide">買進＝從銀行「轉帳」到這個帳戶，賣出＝轉回銀行；股利可記成收入。帳面餘額就是投入本金，填了市值就會算出損益，淨資產也改用市值計算。市值要自己定期更新。${Number.isFinite(f.value) && f.valueDate ? `上次更新：${esc(f.valueDate)}` : ''}</p></div>` +
+      `<label class="ledger__field ledger__field--wide"><span>持股（自動算市值）</span><textarea name="holdings" rows="3" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="一行一檔：代號 數量&#10;0050 570&#10;VOO 3&#10;BTC 0.05">${esc((f.holdings || []).map(h => `${h.mkt ? { tw: '台', us: '美', crypto: '幣' }[h.mkt] + ' ' : ''}${h.code} ${h.shares}`).join('\n'))}</textarea></label>` +
+      `<label class="ledger__field ledger__field--wide"><span>目前市值（手動，沒填持股時才用）</span><input name="mvalue" type="number" min="0" step="any" inputmode="decimal" value="${Number.isFinite(f.value) ? f.value : ''}" placeholder="例如基金、海外股票"></label>` +
+      `<p class="ledger__hint ledger__field--wide">買進＝從銀行「轉帳」到這個帳戶，賣出＝轉回銀行；股利可記成收入。帳面餘額就是投入本金。填了持股，市值會自動更新：台股、美股用最近收盤價，加密貨幣每小時更新，美股和幣價自動換成台幣${quotes?.updated ? `（價格更新於 ${esc(stamp(quotes.updated))}）` : ''}。美股和幣代號撞名時，前面加「美」或「幣」，例如「幣 SOL 2」。買賣後記得改數量。${Number.isFinite(f.value) && f.valueDate ? `手動市值上次更新：${esc(f.valueDate)}` : ''}</p></div>` +
       `<p class="ledger__error" data-acc-error role="alert"></p>` +
       `<div class="ledger__actions"><span class="ledger__hw"><button class="ledger__btn ledger__btn--primary" type="submit">儲存</button><label class="ledger__hpad" aria-hidden="true"><input type="checkbox" switch tabindex="-1"></label></span><button class="ledger__btn" type="button" data-act="acc-cancel">取消</button>` +
       `${f.id ? `<button class="ledger__btn ledger__btn--danger" type="button" data-act="acc-delete" data-id="${esc(f.id)}">刪除</button>` : ''}</div></form>`;
     const investRow = (a, b) => {
-      if (!Number.isFinite(a.value)) return `<li class="ledger__accrow"><button type="button" class="ledger__acc" data-act="acc-edit" data-id="${esc(a.id)}"><span class="ledger__acc-name">${esc(a.name)}<small class="ledger__muted">投入本金 · 未填市值</small></span><span class="ledger__num">${money(b)}</span></button></li>`;
-      const pl = round2(a.value - b), pct = b > 0 ? ` (${pl >= 0 ? '+' : ''}${(pl / b * 100).toFixed(1)}%)` : '';
+      const val = investValue(a), auto = autoValue(a) !== null;
+      if (val === null) return `<li class="ledger__accrow"><button type="button" class="ledger__acc" data-act="acc-edit" data-id="${esc(a.id)}"><span class="ledger__acc-name">${esc(a.name)}<small class="ledger__muted">投入本金 · ${a.holdings?.length ? (quotes ? `查不到 ${esc(missing(a).join('、'))} 的價格` : '等待價格') : '未填市值'}</small></span><span class="ledger__num">${money(b)}</span></button></li>`;
+      const pl = round2(val - b), pct = b > 0 ? ` (${pl >= 0 ? '+' : ''}${(pl / b * 100).toFixed(1)}%)` : '';
       const plTxt = masked ? '•••••' : `${pl >= 0 ? '+' : '−'}${nf.format(Math.abs(pl))}${pct}`;
-      return `<li class="ledger__accrow"><button type="button" class="ledger__acc" data-act="acc-edit" data-id="${esc(a.id)}"><span class="ledger__acc-name">${esc(a.name)}<small class="ledger__muted">本金 ${money(b)} · 損益 <span class="ledger__pl ${pl > 0 ? 'is-up' : pl < 0 ? 'is-down' : ''}">${plTxt}</span></small></span><span class="ledger__num">${money(a.value)}</span></button></li>`;
+      return `<li class="ledger__accrow"><button type="button" class="ledger__acc" data-act="acc-edit" data-id="${esc(a.id)}"><span class="ledger__acc-name">${esc(a.name)}<small class="ledger__muted">本金 ${money(b)} · 損益 <span class="ledger__pl ${pl > 0 ? 'is-up' : pl < 0 ? 'is-down' : ''}">${plTxt}</span></small>${auto ? `<small class="ledger__muted">自動 · 價格更新於 ${esc(stamp(quotes.updated))}</small>` : a.holdings?.length ? `<small class="ledger__muted">查不到 ${esc(missing(a).join('、'))} 的價格，先用手動市值</small>` : ''}</span><span class="ledger__num">${money(val)}</span></button></li>`;
     };
     const groups = ['cash', 'bank', 'ewallet', 'invest', 'credit'].map(k => {
       const items = bal.filter(x => x.a.kind === k);
@@ -1089,7 +1139,7 @@ export function createLedger(root, options = {}) {
       e.preventDefault();
       const credit = f.kind.value === 'credit', n = Number(f.opening.value) || 0;
       try {
-        saveAccount(f.dataset.id || null, { name: f.accname.value, kind: f.kind.value, opening: credit ? -Math.abs(n) : n, statementDay: f.statementDay.value, dueDay: f.dueDay.value, limit: f.limit.value, value: f.mvalue.value });
+        saveAccount(f.dataset.id || null, { name: f.accname.value, kind: f.kind.value, opening: credit ? -Math.abs(n) : n, statementDay: f.statementDay.value, dueDay: f.dueDay.value, limit: f.limit.value, value: f.mvalue.value, holdings: f.holdings.value });
         feedback('帳戶已儲存');
       } catch (err) { f.querySelector('[data-acc-error]').textContent = err.message; }
     } else if (f.matches('[data-form="loan"]')) {
@@ -1171,6 +1221,8 @@ export function createLedger(root, options = {}) {
   $('form').time.value = nowTime();
   syncForm();
   update();
+  loadQuotes();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadQuotes(); });
   Promise.resolve().then(() => storage.load()).then(s => {
     if (s && Array.isArray(s.transactions)) state = normalize(s, opt.categories);
     ready = true; update(); opt.onReady?.();

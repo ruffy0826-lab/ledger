@@ -108,8 +108,9 @@ body:not([data-tab="accounts"]) [data-r="accounts"] { display: none; }
 .ledger__acc-form .ledger__field:first-child, .ledger__acc-form > :is(.ledger__error, .ledger__actions, .ledger__acc-credit, .ledger__acc-invest) { grid-column: 1 / -1; }
 .ledger__acc-invest { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .ledger__acc-invest .ledger__field--wide { grid-column: 1 / -1; }
-.ledger__pl.is-up { color: #d93a3a; }
-.ledger__pl.is-down { color: #1f9d55; }
+.ledger__pl.is-up { color: #1f9d55; }
+.ledger__pl.is-down { color: #d93a3a; }
+.ledger__acc-invest textarea { font: inherit; resize: vertical; }
 .ledger__acc-credit { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
 /* v3：搜尋與分析 */

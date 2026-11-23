@@ -1,0 +1,35 @@
+# 每小時抓一次台股・美股・加密貨幣價格，推到 prices 分支（不動 main，不觸發 Pages 重新部署）
+name: 更新投資價格
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: prices
+jobs:
+  prices:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 抓價格
+        run: |
+          mkdir -p /tmp/out
+          # 上一次的結果：某個來源這次失敗時沿用舊價格
+          curl -fsSL "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/prices/prices.json" -o /tmp/old.json || echo '{}' > /tmp/old.json
+          node .github/scripts/fetch-prices.mjs /tmp/out/new.json
+          node -e '
+            const fs = require("fs"), o = JSON.parse(fs.readFileSync("/tmp/old.json")), n = JSON.parse(fs.readFileSync("/tmp/out/new.json"));
+            for (const k of ["tw", "us", "crypto"]) if (Object.keys(n[k] || {}).length < 10 && o[k]) n[k] = o[k];
+            if (!n.fx?.USD && o.fx) n.fx = o.fx;
+            fs.writeFileSync("/tmp/out/prices.json", JSON.stringify(n));'
+      - name: 推到 prices 分支
+        run: |
+          cd /tmp/out && rm new.json
+          git init -q -b prices && git add prices.json
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -qm "價格 $(date -u +%FT%TZ)"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" prices
