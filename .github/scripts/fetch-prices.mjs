@@ -56,9 +56,13 @@ await step('tpex', async () => {
 const usd = {};
 await step('us-stocks', async () => collect(await getJSON('https://api.nasdaq.com/api/screener/stocks?tableonly=true&download=true'), usd, ['symbol'], ['lastsale', 'lastSalePrice']));
 await step('us-etf', async () => {
-  const j = await getJSON('https://api.nasdaq.com/api/screener/etf?tableonly=true&download=true'), before = Object.keys(usd).length;
-  collect(j, usd, ['symbol'], ['lastSalePrice', 'lastsale']);
-  if (Object.keys(usd).length - before < 100) console.log('etf 格式', JSON.stringify(j).slice(0, 1500));
+  for (const q of ['tableonly=true&limit=10000&offset=0', 'download=true', 'tableonly=true&download=true']) {
+    const j = await getJSON('https://api.nasdaq.com/api/screener/etf?' + q), before = Object.keys(usd).length;
+    collect(j, usd, ['symbol'], ['lastSalePrice', 'lastsale']);
+    const got = Object.keys(usd).length - before;
+    console.log('etf', q, got, got < 100 ? JSON.stringify(j).slice(0, 600) : '');
+    if (got >= 100) break;
+  }
 });
 for (const [k, v] of Object.entries(usd)) if (out.fx.USD) out.us[k.replace('/', '.')] = r4(v * out.fx.USD);
 
@@ -71,6 +75,6 @@ await step('crypto', async () => {
 });
 
 const n = { tw: Object.keys(out.tw).length, us: Object.keys(out.us).length, crypto: Object.keys(out.crypto).length };
-console.log('counts', n, 'fx', out.fx, 'samples', { '0050': out.tw['0050'], '2330': out.tw['2330'], VOO: out.us.VOO, AAPL: out.us.AAPL, BTC: out.crypto.BTC, ETH: out.crypto.ETH });
+console.log('twDate', out.twDate, 'counts', n, 'fx', out.fx, 'samples', { '0050': out.tw['0050'], '2330': out.tw['2330'], VOO: out.us.VOO, AAPL: out.us.AAPL, BTC: out.crypto.BTC, ETH: out.crypto.ETH });
 if (!n.tw && !n.us && !n.crypto) { console.error('全部失敗', out.errors); process.exit(1); }
 writeFileSync(process.argv[2] || 'prices.json', JSON.stringify(out));
