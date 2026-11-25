@@ -222,7 +222,7 @@ export function createLedger(root, options = {}) {
 
   let state = normalize(null, opt.categories);
   let month = today().slice(0, 7);
-  let type = 'expense', editing = false, ready = false, editId = null, accEdit = null, catMgr = false, lastCat = '', lastPerson = '', view = 'acc', personOpen = null, loanOpen = null, loanForm = null, payMode = null, instOpen = null, instForm = null, pplForm = null;
+  let type = 'expense', editing = false, ready = false, editId = null, accEdit = null, catMgr = false, catOpen = null, lastCat = '', lastPerson = '', view = 'acc', personOpen = null, loanOpen = null, loanForm = null, payMode = null, instOpen = null, instForm = null, pplForm = null;
 
   root.innerHTML = SKELETON;
   const $ = k => root.querySelector(`[data-r="${k}"]`);
@@ -650,8 +650,17 @@ export function createLedger(root, options = {}) {
         const b = budgetState(c, month), s = spent[c] || 0;
         const pct = b.budget ? Math.min(b.ratio, 1) * 100 : total ? s / total * 100 : 0;
         const note = b.budget ? `已用 ${Math.round(b.ratio * 100)}% 預算` : `佔支出 ${Math.round(pct)}%`;
-        return `<li class="ledger__cat is-${b.level}"><div class="ledger__cat-top"><span>${esc(c)}</span><span class="ledger__num">${money(s)}${b.budget ? ` <small>/ ${money(b.budget)}</small>` : ''}</span></div>` +
-          `<div class="ledger__meter" aria-hidden="true"><i data-pct="${pct.toFixed(1)}"></i></div><small class="ledger__muted">${note}</small></li>`;
+        const open = catOpen === c;
+        const tx = open ? inMonth().filter(t => t.type === 'expense' && t.category === c)
+          .sort((x, y) => y.date.localeCompare(x.date) || (y.time || '').localeCompare(x.time || '') || (y.createdAt || 0) - (x.createdAt || 0)) : [];
+        const detail = !open ? '' : tx.length
+          ? `<ul class="ledger__cat-tx">${tx.map(t => `<li class="ledger__tx"><time datetime="${t.date}">${t.date.slice(5).replaceAll('-', '/')}${t.time ? `<small>${t.time}</small>` : ''}</time>` +
+            `<button type="button" class="ledger__tx-main" data-act="edit" data-id="${esc(t.id)}" aria-label="編輯 ${esc(t.note || c)} ${money(t.amount)}"><span>${esc(t.note || c)}</span><small class="ledger__muted">${esc(accName(t.accountId))}</small></button>` +
+            `<span class="ledger__num is-expense">−${money(t.amount)}</span></li>`).join('')}</ul>`
+          : '<p class="ledger__empty">本月這個分類沒有支出。</p>';
+        return `<li class="ledger__cat is-${b.level}${open ? ' is-open' : ''}"><button type="button" class="ledger__cat-btn" data-act="cat-open" data-cat="${esc(c)}" aria-expanded="${open}">` +
+          `<div class="ledger__cat-top"><span>${esc(c)}</span><span class="ledger__num">${money(s)}${b.budget ? ` <small>/ ${money(b.budget)}</small>` : ''}<i class="ledger__chev" aria-hidden="true"></i></span></div>` +
+          `<div class="ledger__meter" aria-hidden="true"><i data-pct="${pct.toFixed(1)}"></i></div><small class="ledger__muted">${note}${s ? ` · ${inMonth().filter(t => t.type === 'expense' && t.category === c).length} 筆` : ''}</small></button>${detail}</li>`;
       }).join('')}</ul>`;
     }
     $('cats').innerHTML = `<div class="ledger__sec-head"><h3>支出分類</h3>${editing ? '' : '<span class="ledger__links"><button class="ledger__link" type="button" data-act="catmgr-open">管理分類</button><button class="ledger__link" type="button" data-act="budget-edit">設定預算</button></span>'}</div>${body}`;
@@ -1043,7 +1052,7 @@ export function createLedger(root, options = {}) {
       if (confirm('刪除這筆記錄？')) { removeTransaction(b.dataset.id); feedback('已刪除'); }
     } else if (act === 'budget-edit' || act === 'budget-cancel') {
       editing = act === 'budget-edit'; update();
-    } else if (act === 'edit') { if (state.transactions.find(t => t.id === b.dataset.id)?.type === 'loanprin') return alert('貸款本金記錄無法修改。請刪除後，到「資產 › 貸款」重新記錄。'); startEdit(b.dataset.id); if (b.closest('[data-r="accounts"]')) root.dispatchEvent(new CustomEvent('ledger:goto', { detail: 'records' })); }
+    } else if (act === 'edit') { if (state.transactions.find(t => t.id === b.dataset.id)?.type === 'loanprin') return alert('貸款本金記錄無法修改。請刪除後，到「資產 › 貸款」重新記錄。'); startEdit(b.dataset.id); if (b.closest('[data-r="accounts"], [data-r="cats"]')) root.dispatchEvent(new CustomEvent('ledger:goto', { detail: 'records' })); }
     else if (act === 'view') { view = b.dataset.v; pplForm = null; personOpen = loanOpen = instOpen = loanForm = instForm = payMode = null; renderAccounts(); }
     else if (act === 'loan-new') { loanForm = 'new'; renderAccounts(); }
     else if (act === 'loan-open') { loanOpen = b.dataset.id; payMode = null; renderAccounts(); scrollTo(0, 0); }
@@ -1075,6 +1084,7 @@ export function createLedger(root, options = {}) {
       if (confirm('刪除這個對象？')) { try { removePerson(b.dataset.id); feedback('已刪除'); } catch (err) { alert(err.message); } }
     }
     else if (act === 'edit-cancel') endEdit();
+    else if (act === 'cat-open') { catOpen = catOpen === b.dataset.cat ? null : b.dataset.cat; haptic(); renderCats(); root.querySelectorAll('[data-r="cats"] [data-pct]').forEach(el => { el.style.width = el.dataset.pct + '%'; }); }
     else if (act === 'catmgr-open') { catMgr = true; editing = false; update(); }
     else if (act === 'catmgr-close') { catMgr = false; update(); }
     else if (act === 'cat-rename') {

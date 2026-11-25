@@ -79,6 +79,13 @@
 
 /* 分類與預算進度 */
 .ledger__cat { padding: .65rem 0; border-bottom: 1px solid var(--l-line); }
+.ledger__cat-btn { display: block; width: 100%; padding: 0; font: inherit; color: inherit; text-align: left; background: none; border: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.ledger__chev { display: inline-block; width: .45rem; height: .45rem; margin-left: .5rem; border-right: 1.5px solid var(--l-muted); border-bottom: 1.5px solid var(--l-muted); transform: translateY(-.15rem) rotate(45deg); transition: transform .2s; }
+.ledger__cat.is-open .ledger__chev { transform: translateY(.05rem) rotate(-135deg); }
+.ledger__cat-tx { margin: .4rem 0 0; padding: 0 0 0 .75rem; list-style: none; border-left: 2px solid var(--l-line); }
+.ledger__cat-tx .ledger__tx { grid-template-columns: 3.2rem 1fr auto; }
+.ledger__cat-tx .ledger__tx:last-child { border-bottom: 0; }
+.ledger__cat .ledger__empty { margin: .4rem 0 0; }
 .ledger__cat-top { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .35rem; }
 .ledger__meter { height: .4rem; margin-bottom: .3rem; overflow: hidden; border-radius: 99px; background: var(--l-line); }
 .ledger__meter i { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--l-accent); transition: width .25s; }
