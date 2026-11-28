@@ -188,7 +188,7 @@ export function createLedger(root, options = {}) {
     },
   };
   const storage = opt.storage || localAdapter(opt.storageKey);
-  const nf = new Intl.NumberFormat(opt.locale, { style: 'currency', currency: opt.currency, minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  const nf = new Intl.NumberFormat(opt.locale, { style: 'currency', currency: opt.currency, minimumFractionDigits: 0, maximumFractionDigits: 0 });
   let masked = !!opt.masked;
   const money = n => (masked ? '•••••' : nf.format(n));
   // 價格：GitHub Actions 每小時更新 prices 分支上的 prices.json（台股・美股收盤價、加密貨幣現價，全部已換成台幣）；離線時用上次抓到的

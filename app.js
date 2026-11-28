@@ -75,7 +75,7 @@ initDatePicker();
 const ledger = createLedger($('#app'), { storage, masked: hidden, onReady: refresh, onChange: refresh });
 navigator.storage?.persist?.();   // 請瀏覽器把資料標為「不要自動清除」
 
-const nf = new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const nf = new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', minimumFractionDigits: 0, maximumFractionDigits: 0 });
 const drawAnalysis = mountAnalysis($('#analysis'), () => ledger.getState(), n => (hidden ? '•••••' : nf.format(n)), () => hidden, () => ledger.getDebt());
 const setTab = t => {
   document.body.dataset.tab = t;
